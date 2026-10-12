@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "easymic-rust",
+]
+default-members = ["easymic-rust"]
+resolver = "2"

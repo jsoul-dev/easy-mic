@@ -1,0 +1,33 @@
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build directories
+cmake-build-*/
+/build/
+/out/
+
+# Compiled binaries
+*.exe
+*.dll
+*.lib
+*.obj
+*.o
+*.a
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Log files
+*.log
+_codeql_detected_source_root
+
+# Rust Cargo target
+target/
+easymic-rust/target/

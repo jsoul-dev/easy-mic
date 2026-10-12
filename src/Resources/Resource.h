@@ -1,0 +1,109 @@
+#pragma once
+
+//////////////////////////////////////////////////////////////////////////////
+// Common resources (Icons, Sounds, Menus)
+//////////////////////////////////////////////////////////////////////////////
+
+// Icons
+#define IDI_APP             4
+#define IDI_MIC	            5
+#define IDI_MIC_MUTED		6
+#define IDI_MIC_UNMUTED		7
+#define IDI_MIC_ACTIVE		8
+
+// Sounds
+#define IDR_MUTE            18
+#define IDR_UNMUTE		    19
+#define IDR_TICK            20
+#define IDR_ENABLE          21
+#define IDR_DISABLE         22
+
+// Menus
+#define IDR_TRAY_MENU	    100
+#define ID_APP_EXIT         40009
+#define ID_APP_SETTINGS     40010
+#define ID_APP_TOGGLE_BELL  40011
+/// Posted to self, never on a menu: closing the settings window may not destroy it from inside
+/// its own WM_DESTROY, so the drop is deferred back through the command queue.
+#define ID_APP_SETTINGS_CLOSED 40012
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Settings Window (IDD_SETTINGS)
+//////////////////////////////////////////////////////////////////////////////
+
+
+#define IDD_SETTINGS_MAIN                           150
+#define IDC_SETTINGS_TREE                           151
+#define IDC_SETTINGS_GROUPBOX                       152
+#define IDC_SETTINGS_VERSION                        153
+
+#define IDD_SETTINGS_GENERAL                        201
+#define IDC_SETTINGS_AUTOSTART                      202
+#define IDC_SETTINGS_SKIP_UAC                       203
+#define IDC_SETTINGS_UPDATES_ENABLED                204
+#define IDC_SETTINGS_AUTO_UPDATE_ENABLED            205
+
+#define IDD_SETTINGS_INDICATOR                      251
+#define IDC_SETTINGS_INDICATOR_COMBO                252
+#define IDC_SETTINGS_INDICATOR_SIZE_TRACKBAR        253
+#define IDC_SETTINGS_INDICATOR_THRESHOLD_TRACKBAR   254
+#define IDC_SETTINGS_INDICATOR_CAPTURE              255
+#define IDC_SETTINGS_INDICATOR_ON_TOP               256
+#define IDC_SETTINGS_INDICATOR_HIDE_INACTIVE        257
+#define IDC_SETTINGS_INDICATOR_NOTIFICATIONS        258
+
+#define IDD_SETTINGS_SOUNDS                         301
+#define IDC_SETTINGS_SOUNDS_MIC_VOLUME_TRACKBAR     302
+#define IDC_SETTINGS_SOUNDS_MIC_KEEP_VOLUME         303
+#define IDC_SETTINGS_SOUNDS_BELL_VOLUME_TRACKBAR    304
+#define IDC_SETTINGS_SOUNDS_MUTE_COMBO              305
+#define IDC_SETTINGS_SOUNDS_MUTE_BROWSE             306
+#define IDC_SETTINGS_SOUNDS_UNMUTE_COMBO            307
+#define IDC_SETTINGS_SOUNDS_UNMUTE_BROWSE           308
+
+#define IDD_SETTINGS_HOTKEYS                        401
+#define IDC_HOTKEYS_LIST                            402
+#define IDC_HOTKEYS_TITLE                           403
+#define IDC_HOTKEYS_WINDOW_LABEL                    404
+#define IDC_HOTKEYS_WINDOW_TRACKBAR                 405
+
+
+#define IDD_ACTION_EDIT                              451
+#define IDC_ACTION_NAME                              452
+#define IDC_ACTION_COMMAND                           453
+#define IDC_ACTION_HOTKEY                            454
+#define IDC_ACTION_ON_RELEASE                        455
+#define IDC_ACTION_DELETE                            456
+#define IDC_ACTION_SOUND                             457
+#define IDC_ACTION_SOUND_BROWSE                      458
+#define IDC_ACTION_NAME_LABEL                        459
+#define IDC_ACTION_COMMAND_LABEL                     460
+#define IDC_ACTION_SOUND_LABEL                       461
+#define IDC_ACTION_NOTIFICATION_LABEL                462
+#define IDC_ACTION_NOTIFICATION                      463
+#define IDC_ACTION_NOTIFICATION_ENABLED              464
+#define IDC_ACTION_NOTIFICATION_TOKENS               465
+#define IDC_ACTION_COMMAND_TOKENS                    466
+#define IDC_ACTION_PRESSES_LABEL                     467
+#define IDC_ACTION_PRESSES                           468
+#define IDC_ACTION_BLOCK                             469
+#define IDC_ACTION_SOUND_VOLUME_LABEL                470
+#define IDC_ACTION_SOUND_VOLUME                      471
+#define IDC_ACTION_TAP_ONLY                          472
+#define IDC_ACTION_ARGS_LABEL                        473
+#define IDC_ACTION_ARGS                              474
+
+#define IDD_SETTINGS_ABOUT                          501
+#define IDC_ABOUT_VERSION_INFO                       502
+#define IDC_ABOUT_GITHUB_LINK                        503
+#define IDC_ABOUT_LOG_LIST                           504
+
+#define IDD_UPDATE_DIALOG                            601
+#define IDC_UPDATE_TITLE                             602
+#define IDC_UPDATE_VERSION                           603
+#define IDC_UPDATE_NOTES                             604
+#define IDC_UPDATE_INSTALL                           605
+#define IDC_UPDATE_SKIP                              606
+#define IDC_UPDATE_LATER                             607
+

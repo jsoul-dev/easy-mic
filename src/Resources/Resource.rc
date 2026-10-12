@@ -1,0 +1,218 @@
+﻿#include <windows.h>
+#include <commctrl.h>
+#include <richedit.h>
+
+#include "resource.h"
+#include "winres.h"
+
+
+#pragma code_page(65001)
+
+IDI_APP            ICON                    "appicon.ico"
+IDI_MIC_MUTED      ICON                    "mic-muted.ico"
+IDI_MIC_UNMUTED    ICON                    "mic-unmuted.ico"
+IDI_MIC_ACTIVE     ICON                    "mic-active.ico"
+
+IDR_MUTE           WAVE                    "mute.wav"
+IDR_UNMUTE         WAVE                    "unmute.wav"
+IDR_TICK           WAVE                    "tick.wav"
+IDR_ENABLE         WAVE                    "enable.wav"
+IDR_DISABLE        WAVE                    "disable.wav"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_TRAY_MENU MENU
+BEGIN
+    POPUP "POPUP"
+    BEGIN
+        MENUITEM "Settings",                  ID_APP_SETTINGS
+        MENUITEM SEPARATOR
+        MENUITEM "Exit",                  ID_APP_EXIT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog - include separate .rc file for each window
+//
+
+/////////////////////////////////////////////////////////////////////////////
+// Settings Window Dialog
+/////////////////////////////////////////////////////////////////////////////
+
+IDD_SETTINGS_MAIN DIALOGEX 0, 0, 340, 213
+STYLE DS_SETFONT | DS_CENTER | WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
+CAPTION "Easymic - settings"
+FONT 8, "Ms Shell Dlg"
+{
+    CONTROL         "", IDC_SETTINGS_TREE, WC_TREEVIEW, TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS | TVS_TRACKSELECT | TVS_FULLROWSELECT | TVS_DISABLEDRAGDROP | WS_TABSTOP, 5, 5, 75, 176, WS_EX_STATICEDGE
+    // WS_EX_CONTROLPARENT is required, not cosmetic: the category pages live inside this group
+    // box, and without it the dialog manager cannot walk into them - its focus/tab search never
+    // finds the focused control and spins forever (hangs on every modal dialog opened from a page)
+    GROUPBOX        "", IDC_SETTINGS_GROUPBOX, 85, 5, 250, 176, BS_GROUPBOX | WS_CHILD | WS_VISIBLE, WS_EX_CONTROLPARENT
+    LTEXT           "", IDC_SETTINGS_VERSION, 5, 197, 100, 10
+    DEFPUSHBUTTON   "OK", IDOK, 229, 194, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 284, 194, 50, 14
+}
+
+IDD_SETTINGS_GENERAL DIALOGEX 0, 0, 250, 176
+STYLE WS_CHILD | WS_SYSMENU | WS_TABSTOP | WS_GROUP | DS_SHELLFONT | DS_CONTROL
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 8, "Ms Shell Dlg"
+{
+    CONTROL         "Start with Windows", IDC_SETTINGS_AUTOSTART, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,0,240,10
+    CONTROL         "Skip UAC (Administrator required)", IDC_SETTINGS_SKIP_UAC, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,15,240,10
+    CONTROL         "Check for updates", IDC_SETTINGS_UPDATES_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,30,240,10
+    CONTROL         "Enable auto-updates", IDC_SETTINGS_AUTO_UPDATE_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,45,240,10
+}
+
+IDD_SETTINGS_INDICATOR DIALOGEX 0, 0, 250, 176
+STYLE WS_CHILD | WS_SYSMENU | WS_TABSTOP | WS_GROUP | DS_SHELLFONT | DS_CONTROL
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 8, "Ms Shell Dlg"
+{
+    CONTROL         "Exclude from capture", IDC_SETTINGS_INDICATOR_CAPTURE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,0,240,10
+    CONTROL         "On top of all the windows (experimental)", IDC_SETTINGS_INDICATOR_ON_TOP, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,11,240,10
+    CONTROL         "Hide when microphone inactive", IDC_SETTINGS_INDICATOR_HIDE_INACTIVE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,22,240,10
+    CONTROL         "Show action notifications", IDC_SETTINGS_INDICATOR_NOTIFICATIONS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,0,33,240,10
+    LTEXT           "Show while",IDC_STATIC,0,48,95,15
+    COMBOBOX        IDC_SETTINGS_INDICATOR_COMBO,100,46,133,70,CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_OVERLAPPED | WS_VISIBLE
+    LTEXT           "Size (px)",IDC_STATIC,0,64,95,15
+    CONTROL         "",IDC_SETTINGS_INDICATOR_SIZE_TRACKBAR,"msctls_trackbar32",TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | TBS_TOOLTIPS,100,61,133,15
+    LTEXT           "Volume threshold (%)",IDC_STATIC,0,81,95,15
+    CONTROL         "",IDC_SETTINGS_INDICATOR_THRESHOLD_TRACKBAR,"msctls_trackbar32",TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | TBS_TOOLTIPS,100,78,133,15
+}
+
+IDD_SETTINGS_SOUNDS DIALOGEX 0, 0, 250, 176
+STYLE WS_CHILD | WS_SYSMENU | WS_TABSTOP | WS_GROUP | DS_SHELLFONT | DS_CONTROL
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 8, "Ms Shell Dlg"
+{
+    GROUPBOX        "Microphone",IDC_STATIC,0,0,240,45
+
+    LTEXT           "Volume",IDC_STATIC,7,15,88,15
+    CONTROL         "",IDC_SETTINGS_SOUNDS_MIC_VOLUME_TRACKBAR,"msctls_trackbar32",TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | TBS_TOOLTIPS,100,13,133,15
+    CONTROL         "Keep volume always on this level", IDC_SETTINGS_SOUNDS_MIC_KEEP_VOLUME, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,11,27,180,10
+    GROUPBOX        "Bell",IDC_STATIC,0,45,240,74
+
+    LTEXT           "Volume",IDC_STATIC,7,59,88,15
+    CONTROL         "",IDC_SETTINGS_SOUNDS_BELL_VOLUME_TRACKBAR,"msctls_trackbar32",TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | TBS_TOOLTIPS,100,57,133,15
+
+    LTEXT           "Mute sound",IDC_STATIC,7,75,88,15
+    COMBOBOX        IDC_SETTINGS_SOUNDS_MUTE_COMBO,100,74,113,70,WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | CBS_DROPDOWNLIST
+    CONTROL "...", IDC_SETTINGS_SOUNDS_MUTE_BROWSE, "Button", BS_PUSHBUTTON | WS_TABSTOP, 217, 74, 16, 13
+
+    LTEXT           "Unmute sound",IDC_STATIC,7,90,88,15
+    COMBOBOX        IDC_SETTINGS_SOUNDS_UNMUTE_COMBO,100,90,113,70,WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | CBS_DROPDOWNLIST
+    CONTROL "...", IDC_SETTINGS_SOUNDS_UNMUTE_BROWSE, "Button", BS_PUSHBUTTON | WS_TABSTOP, 217, 90, 16, 13
+}
+
+IDD_SETTINGS_HOTKEYS DIALOGEX 0, 0, 250, 176
+STYLE WS_CHILD | WS_SYSMENU | WS_TABSTOP | WS_GROUP | DS_SHELLFONT | DS_CONTROL
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 8, "Ms Shell Dlg"
+{
+    LTEXT           "Double-click an action to edit it:", IDC_HOTKEYS_TITLE, 0, 0, 240, 10
+    CONTROL         "", IDC_HOTKEYS_LIST, WC_LISTVIEW, LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 0, 15, 240, 122
+    LTEXT           "Multi-press window (ms)", IDC_HOTKEYS_WINDOW_LABEL, 0, 145, 90, 10
+    CONTROL         "", IDC_HOTKEYS_WINDOW_TRACKBAR, "msctls_trackbar32", TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS, 94, 142, 146, 15
+}
+
+IDD_ACTION_EDIT DIALOGEX 0, 0, 240, 276
+STYLE DS_MODALFRAME | DS_SHELLFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Action"
+FONT 8, "Ms Shell Dlg"
+{
+    LTEXT           "Name", IDC_ACTION_NAME_LABEL, 8, 11, 40, 10
+    EDITTEXT        IDC_ACTION_NAME, 50, 9, 182, 13, ES_AUTOHSCROLL
+    LTEXT           "Command", IDC_ACTION_COMMAND_LABEL, 8, 31, 40, 10
+    EDITTEXT        IDC_ACTION_COMMAND, 50, 29, 164, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "...", IDC_ACTION_COMMAND_TOKENS, 216, 29, 16, 13
+    LTEXT           "Arguments", IDC_ACTION_ARGS_LABEL, 8, 51, 40, 10
+    EDITTEXT        IDC_ACTION_ARGS, 50, 49, 182, 13, ES_AUTOHSCROLL
+    LTEXT           "Hotkey", IDC_STATIC, 8, 71, 40, 10
+    PUSHBUTTON      "Click to bind", IDC_ACTION_HOTKEY, 50, 68, 182, 14
+    LTEXT           "Presses", IDC_ACTION_PRESSES_LABEL, 8, 90, 40, 10
+    COMBOBOX        IDC_ACTION_PRESSES, 50, 88, 40, 80, CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL
+    CONTROL         "Trigger on release", IDC_ACTION_ON_RELEASE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 50, 109, 182, 10
+    CONTROL         "Only when tapped alone", IDC_ACTION_TAP_ONLY, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 50, 129, 182, 10
+    CONTROL         "Block key from other apps", IDC_ACTION_BLOCK, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 50, 149, 182, 10
+    LTEXT           "Sound", IDC_ACTION_SOUND_LABEL, 8, 170, 40, 10
+    COMBOBOX        IDC_ACTION_SOUND, 50, 168, 164, 70, CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL
+    PUSHBUTTON      "...", IDC_ACTION_SOUND_BROWSE, 216, 168, 16, 13
+    LTEXT           "Volume", IDC_ACTION_SOUND_VOLUME_LABEL, 8, 190, 40, 10
+    CONTROL         "", IDC_ACTION_SOUND_VOLUME, "msctls_trackbar32", TBS_AUTOTICKS | TBS_ENABLESELRANGE | WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS, 50, 187, 182, 15
+    CONTROL         "Show notification", IDC_ACTION_NOTIFICATION_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 50, 208, 182, 10
+    LTEXT           "Text", IDC_ACTION_NOTIFICATION_LABEL, 8, 229, 40, 10
+    EDITTEXT        IDC_ACTION_NOTIFICATION, 50, 227, 164, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "...", IDC_ACTION_NOTIFICATION_TOKENS, 216, 227, 16, 13
+    PUSHBUTTON      "Delete", IDC_ACTION_DELETE, 8, 253, 50, 14
+    DEFPUSHBUTTON   "Save", IDOK, 126, 253, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 182, 253, 50, 14
+}
+
+IDD_SETTINGS_ABOUT DIALOGEX 0, 0, 250, 176
+STYLE WS_CHILD | WS_SYSMENU | WS_TABSTOP | WS_GROUP | DS_SHELLFONT | DS_CONTROL
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 8, "Ms Shell Dlg"
+{
+    LTEXT           "", IDC_ABOUT_VERSION_INFO, 0, 0, 100, 10
+    LTEXT           "GitHub", IDC_ABOUT_GITHUB_LINK, 105, 0, 80, 10, SS_NOTIFY
+    CONTROL         "", IDC_ABOUT_LOG_LIST, "EDIT", ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL | ES_AUTOVSCROLL | WS_VSCROLL | WS_HSCROLL | WS_BORDER | WS_TABSTOP, 0, 15, 240, 150
+}
+
+IDD_UPDATE_DIALOG DIALOGEX 0, 0, 260, 175
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Update Available - Easymic"
+FONT 8, "Ms Shell Dlg"
+{
+    ICON            IDI_APP, IDC_STATIC, 14, 14, 20, 20
+    LTEXT           "A new version is available!", IDC_UPDATE_TITLE, 44, 14, 202, 10
+    LTEXT           "Version:", IDC_STATIC, 44, 28, 30, 10
+    LTEXT           "", IDC_UPDATE_VERSION, 74, 28, 172, 10
+    LTEXT           "Release Notes:", IDC_STATIC, 14, 46, 232, 10
+    EDITTEXT        IDC_UPDATE_NOTES, 14, 58, 232, 90, ES_MULTILINE | ES_READONLY | WS_VSCROLL
+    PUSHBUTTON      "Skip this version", IDC_UPDATE_SKIP, 14, 154, 70, 14
+    PUSHBUTTON      "Update", IDC_UPDATE_INSTALL, 121, 154, 60, 14
+    PUSHBUTTON      "Remind me later", IDC_UPDATE_LATER, 186, 154, 60, 14
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+1 VERSIONINFO
+ FILEVERSION    1,3,0,0
+ PRODUCTVERSION 1,3,0,0
+ FILEOS			VOS__WINDOWS32
+ FILETYPE		VFT_APP
+ FILESUBTYPE	VFT2_UNKNOWN
+ FILEFLAGSMASK	0x00000000
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041904b0"
+        BEGIN
+            VALUE "CompanyName", "kitbyte"
+            VALUE "FileDescription", "Easymic"
+            VALUE "FileVersion", "1.3.0.0"
+            VALUE "InternalName", "WindowsP.exe"
+            VALUE "LegalCopyright", "Copyright (C) 2025"
+            VALUE "OriginalFilename", "Easymic.exe"
+            VALUE "ProductVersion", "1.3.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x419, 1200
+    END
+END
+
+1 24 "app.manifest"
