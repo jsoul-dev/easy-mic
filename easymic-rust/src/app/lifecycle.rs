@@ -42,6 +42,7 @@ unsafe impl Send for AppLifecycle {}
 unsafe impl Sync for AppLifecycle {}
 
 static COORDINATOR: parking_lot::Mutex<Option<Arc<AppLifecycle>>> = parking_lot::Mutex::new(None);
+static WM_TASKBAR_CREATED: parking_lot::Mutex<u32> = parking_lot::Mutex::new(0);
 
 impl AppLifecycle {
     pub fn new() -> Result<Arc<Self>, windows::core::Error> {
@@ -94,6 +95,9 @@ impl AppLifecycle {
             HookManager::new(config.clone(), dispatcher.clone(), capture_session.clone());
 
         // 10. Hidden coordinator window for message pump & tray callbacks
+        // Use an unowned top-level hidden tool window with WS_POPUP instead of HWND_MESSAGE
+        // because message-only windows cannot become foreground windows, which breaks
+        // TrackPopupMenu focus and dismiss handshakes with Windows Explorer (KB135788).
         let class_name = w!("EasyMicCoordinatorWindow");
         let main_hwnd = unsafe {
             let wc = WNDCLASSEXW {
@@ -106,20 +110,24 @@ impl AppLifecycle {
             let _ = RegisterClassExW(&wc);
 
             CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
+                WS_EX_TOOLWINDOW,
                 class_name,
                 w!("EasyMicCoordinator"),
-                WINDOW_STYLE(0),
+                WS_POPUP,
                 0,
                 0,
                 0,
                 0,
-                HWND_MESSAGE,
+                None,
                 None,
                 hinstance,
                 None,
             )?
         };
+
+        // Register TaskbarCreated message to restore tray icon if Explorer restarts
+        let taskbar_msg = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
+        *WM_TASKBAR_CREATED.lock() = taskbar_msg;
 
         // 11. Indicator Window
         let indicator = IndicatorWindow::create(
@@ -198,9 +206,18 @@ unsafe extern "system" fn coordinator_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    let taskbar_msg = *WM_TASKBAR_CREATED.lock();
+    if taskbar_msg != 0 && msg == taskbar_msg {
+        let coord = COORDINATOR.lock().clone();
+        if let Some(life) = coord {
+            life.tray.add_icon();
+        }
+        return LRESULT(0);
+    }
+
     match msg {
         WM_TRAY_CALLBACK => {
-            let event = lparam.0 as u32;
+            let event = (lparam.0 as u32) & 0xFFFF;
             if event == WM_RBUTTONUP || event == WM_CONTEXTMENU {
                 let coord = COORDINATOR.lock().clone();
                 if let Some(life) = coord {

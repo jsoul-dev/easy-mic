@@ -130,7 +130,7 @@ fn default_mic_volume() -> i8 {
     100
 }
 fn default_indicator_size() -> u8 {
-    16
+    15
 }
 fn default_volume_threshold() -> f32 {
     0.001
@@ -185,7 +185,7 @@ impl Default for AppConfig {
             window_pos_y: 0,
             bell_volume: 50,
             mic_volume: 100,
-            indicator_size: 16,
+            indicator_size: 15,
             indicator_state: IndicatorState::Hidden,
             indicator_volume_threshold: 0.001,
             exclude_from_capture: false,
@@ -1015,7 +1015,7 @@ mod tests {
         let cfg = AppConfig::default();
         assert_eq!(cfg.bell_volume, 50);
         assert_eq!(cfg.mic_volume, 100);
-        assert_eq!(cfg.indicator_size, 16);
+        assert_eq!(cfg.indicator_size, 15);
         assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
         assert!(cfg.is_mic_keep_volume);
         assert!(cfg.is_skip_uac_enabled);

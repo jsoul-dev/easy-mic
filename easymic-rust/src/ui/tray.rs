@@ -5,7 +5,7 @@ use crate::core::state::{SharedState, StateChangeEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -18,6 +18,7 @@ pub struct TrayIcon {
     state: SharedState,
     icons: Arc<AppIcons>,
     active: AtomicBool,
+    menu_open: AtomicBool,
 }
 
 unsafe impl Send for TrayIcon {}
@@ -30,6 +31,7 @@ impl TrayIcon {
             state: state.clone(),
             icons,
             active: AtomicBool::new(false),
+            menu_open: AtomicBool::new(false),
         });
 
         tray.add_icon();
@@ -133,8 +135,18 @@ impl TrayIcon {
     }
 
     pub fn show_context_menu(&self) -> Option<usize> {
-        unsafe {
-            let hmenu = CreatePopupMenu().ok()?;
+        if self.menu_open.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+
+        let result = unsafe {
+            let hmenu = match CreatePopupMenu() {
+                Ok(m) => m,
+                Err(_) => {
+                    self.menu_open.store(false, Ordering::SeqCst);
+                    return None;
+                }
+            };
             let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_SETTINGS, w!("Settings"));
             let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
             let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_EXIT, w!("Exit"));
@@ -142,16 +154,23 @@ impl TrayIcon {
             let mut pt = POINT::default();
             let _ = GetCursorPos(&mut pt);
 
+            // Per Microsoft KB135788:
+            // 1. Current window must be foreground window before TrackPopupMenu.
             let _ = SetForegroundWindow(self.hwnd);
+
+            // 2. Track popup menu modally.
             let cmd = TrackPopupMenu(
                 hmenu,
-                TPM_RETURNCMD | TPM_NONOTIFY,
+                TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
                 pt.x,
                 pt.y,
                 0,
                 self.hwnd,
                 None,
             );
+
+            // 3. Post WM_NULL to force task switch / dismiss handshake in Explorer.
+            let _ = PostMessageW(self.hwnd, WM_NULL, WPARAM(0), LPARAM(0));
             let _ = DestroyMenu(hmenu);
 
             if cmd.0 != 0 {
@@ -159,7 +178,10 @@ impl TrayIcon {
             } else {
                 None
             }
-        }
+        };
+
+        self.menu_open.store(false, Ordering::SeqCst);
+        result
     }
 
     pub fn remove_icon(&self) {
