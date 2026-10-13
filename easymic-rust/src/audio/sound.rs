@@ -22,9 +22,9 @@ const BYTES_UNMUTE: &[u8] = include_bytes!("../../../src/Resources/unmute.wav");
 const BYTES_ENABLE: &[u8] = include_bytes!("../../../src/Resources/enable.wav");
 const BYTES_DISABLE: &[u8] = include_bytes!("../../../src/Resources/disable.wav");
 
-// Embedded user sound cues
-const BYTES_ON: &[u8] = include_bytes!("../../../sounds/on.wav");
-const BYTES_OFF: &[u8] = include_bytes!("../../../sounds/off.wav");
+// Embedded sound cues
+const BYTES_ON: &[u8] = include_bytes!("../../../src/Resources/on.wav");
+const BYTES_OFF: &[u8] = include_bytes!("../../../src/Resources/off.wav");
 
 #[derive(Debug, Clone)]
 pub struct BundledSound {
