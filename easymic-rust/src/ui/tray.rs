@@ -24,6 +24,13 @@ pub struct TrayIcon {
 unsafe impl Send for TrayIcon {}
 unsafe impl Sync for TrayIcon {}
 
+struct MenuOpenGuard<'a>(&'a AtomicBool);
+impl<'a> Drop for MenuOpenGuard<'a> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 impl TrayIcon {
     pub fn new(hwnd: HWND, state: SharedState, icons: Arc<AppIcons>) -> Arc<Self> {
         let tray = Arc::new(Self {
@@ -138,12 +145,12 @@ impl TrayIcon {
         if self.menu_open.swap(true, Ordering::SeqCst) {
             return None;
         }
+        let _guard = MenuOpenGuard(&self.menu_open);
 
-        let result = unsafe {
+        unsafe {
             let hmenu = match CreatePopupMenu() {
                 Ok(m) => m,
                 Err(_) => {
-                    self.menu_open.store(false, Ordering::SeqCst);
                     return None;
                 }
             };
@@ -178,10 +185,7 @@ impl TrayIcon {
             } else {
                 None
             }
-        };
-
-        self.menu_open.store(false, Ordering::SeqCst);
-        result
+        }
     }
 
     pub fn remove_icon(&self) {

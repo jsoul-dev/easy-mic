@@ -18,11 +18,15 @@ use crate::input::hook::HookManager;
 use crate::input::keys::get_hotkey_name;
 use crate::ui::indicator::IndicatorWindow;
 use parking_lot::RwLock;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::Dialogs::{
+    GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+};
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -175,6 +179,8 @@ const IDC_CMB_MUTE_SOUND: usize = 406;
 const IDC_BTN_TEST_MUTE: usize = 407;
 const IDC_CMB_UNMUTE_SOUND: usize = 408;
 const IDC_BTN_TEST_UNMUTE: usize = 409;
+const IDC_BTN_BROWSE_MUTE: usize = 410;
+const IDC_BTN_BROWSE_UNMUTE: usize = 411;
 
 // Hotkeys tab
 const IDC_TRK_MULTIPRESS: usize = 501;
@@ -200,6 +206,8 @@ const IDC_ACT_CHK_RELEASE: usize = 707;
 const IDC_ACT_CHK_BLOCK: usize = 708;
 const IDC_ACT_CHK_TAP: usize = 709;
 const IDC_ACT_CMB_SOUND: usize = 710;
+const IDC_ACT_BTN_TEST_SOUND: usize = 717;
+const IDC_ACT_BTN_BROWSE_SOUND: usize = 718;
 const IDC_ACT_CHK_NOTIF: usize = 712;
 const IDC_ACT_TXT_NOTIF: usize = 713;
 const IDC_ACT_TXT_COMMAND: usize = 714;
@@ -324,10 +332,24 @@ impl SettingsWindow {
     }
 
     fn apply_changes(&mut self) {
+        // Read live sound cue selections from comboboxes
+        let h_mute_cmb = unsafe { get_ctrl(self.tab_panels[2], IDC_CMB_MUTE_SOUND) };
+        let mute_txt = get_combo_selected_text(h_mute_cmb);
+        let h_unmute_cmb = unsafe { get_ctrl(self.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
+        let unmute_txt = get_combo_selected_text(h_unmute_cmb);
+
         // Save indicator position from live window
         let (pos_x, pos_y) = self.indicator.get_position();
         {
             let mut cfg = self.config.write();
+            if !mute_txt.is_empty() {
+                cfg.mute_sound_source = mute_txt.clone();
+                cfg.recent_sounds.insert(mute_txt);
+            }
+            if !unmute_txt.is_empty() {
+                cfg.unmute_sound_source = unmute_txt.clone();
+                cfg.recent_sounds.insert(unmute_txt);
+            }
             cfg.window_pos_x = pos_x;
             cfg.window_pos_y = pos_y;
             cfg.start_with_windows = self.autostart_pending;
@@ -450,6 +472,7 @@ unsafe extern "system" fn settings_wndproc(
             let win_ptr =
                 GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const parking_lot::Mutex<SettingsWindow>;
             if !win_ptr.is_null() {
+                let _ = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let win_arc = Arc::from_raw(win_ptr);
                 win_arc.lock().indicator.toggle_interactivity(false);
             }
@@ -1136,8 +1159,8 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             w!("Mute Sound Cue:"),
             ws_child_vis_i(0),
             20,
+            140,
             145,
-            150,
             20,
             panel,
             None,
@@ -1150,28 +1173,43 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             w!("COMBOBOX"),
             PCWSTR::null(),
             ws_child_vis_i(CBS_DROPDOWNLIST),
-            180,
-            142,
-            200,
-            120,
+            170,
+            138,
+            190,
+            150,
             panel,
             HMENU(IDC_CMB_MUTE_SOUND as isize as *mut _),
             hinst,
             None,
         )
         .unwrap();
-        populate_sound_combo(h_mute_cmb, &cfg.mute_sound_source);
+        populate_sound_combo(h_mute_cmb, &cfg.mute_sound_source, Some(&cfg.recent_sounds));
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
             w!("Test"),
             ws_child_vis_i(BS_PUSHBUTTON),
-            390,
-            140,
+            370,
+            136,
             60,
             26,
             panel,
             HMENU(IDC_BTN_TEST_MUTE as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Browse..."),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            440,
+            136,
+            85,
+            26,
+            panel,
+            HMENU(IDC_BTN_BROWSE_MUTE as isize as *mut _),
             hinst,
             None,
         )
@@ -1184,8 +1222,8 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             w!("Unmute Sound Cue:"),
             ws_child_vis_i(0),
             20,
-            190,
-            150,
+            185,
+            145,
             20,
             panel,
             None,
@@ -1198,24 +1236,28 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             w!("COMBOBOX"),
             PCWSTR::null(),
             ws_child_vis_i(CBS_DROPDOWNLIST),
-            180,
-            187,
-            200,
-            120,
+            170,
+            183,
+            190,
+            150,
             panel,
             HMENU(IDC_CMB_UNMUTE_SOUND as isize as *mut _),
             hinst,
             None,
         )
         .unwrap();
-        populate_sound_combo(h_unmute_cmb, &cfg.unmute_sound_source);
+        populate_sound_combo(
+            h_unmute_cmb,
+            &cfg.unmute_sound_source,
+            Some(&cfg.recent_sounds),
+        );
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
             w!("Test"),
             ws_child_vis_i(BS_PUSHBUTTON),
-            390,
-            185,
+            370,
+            181,
             60,
             26,
             panel,
@@ -1224,34 +1266,182 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             None,
         )
         .unwrap();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Browse..."),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            440,
+            181,
+            85,
+            26,
+            panel,
+            HMENU(IDC_BTN_BROWSE_UNMUTE as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
     }
 }
 
-fn populate_sound_combo(cmb: HWND, current: &str) {
-    let mut options = vec![
-        "off.wav", "on.wav", "Mute", "Unmute", "Tick", "Enable", "Disable", "None",
-    ];
-    let curr_display = if current.to_ascii_lowercase().ends_with("off.wav") {
-        "off.wav"
-    } else if current.to_ascii_lowercase().ends_with("on.wav") {
-        "on.wav"
-    } else {
-        current
-    };
-    if !curr_display.is_empty()
-        && !options
-            .iter()
-            .any(|&o| o.eq_ignore_ascii_case(curr_display))
-    {
-        options.push(curr_display);
+pub fn get_combo_selected_text(h_cmb: HWND) -> String {
+    unsafe {
+        let sel = SendMessageW(h_cmb, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+        if sel < 0 {
+            return String::new();
+        }
+        let len = SendMessageW(h_cmb, CB_GETLBTEXTLEN, WPARAM(sel as usize), LPARAM(0)).0;
+        if len <= 0 {
+            return String::new();
+        }
+        let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
+        let res = SendMessageW(
+            h_cmb,
+            CB_GETLBTEXT,
+            WPARAM(sel as usize),
+            LPARAM(buf.as_mut_ptr() as isize),
+        )
+        .0;
+        if res < 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buf[..len as usize])
     }
+}
+
+pub fn select_or_add_combo_item(h_cmb: HWND, text: &str) {
+    unsafe {
+        let count = SendMessageW(h_cmb, CB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
+        for i in 0..count {
+            let len = SendMessageW(h_cmb, CB_GETLBTEXTLEN, WPARAM(i as usize), LPARAM(0)).0;
+            if len > 0 {
+                let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
+                let _ = SendMessageW(
+                    h_cmb,
+                    CB_GETLBTEXT,
+                    WPARAM(i as usize),
+                    LPARAM(buf.as_mut_ptr() as isize),
+                );
+                let item = String::from_utf16_lossy(&buf[..len as usize]);
+                if item.eq_ignore_ascii_case(text) {
+                    let _ = SendMessageW(h_cmb, CB_SETCURSEL, WPARAM(i as usize), LPARAM(0));
+                    return;
+                }
+            }
+        }
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let idx = SendMessageW(
+            h_cmb,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(wide.as_ptr() as isize),
+        )
+        .0;
+        if idx >= 0 {
+            let _ = SendMessageW(h_cmb, CB_SETCURSEL, WPARAM(idx as usize), LPARAM(0));
+        }
+    }
+}
+
+pub fn prompt_browse_sound(parent: HWND) -> Option<String> {
+    let mut file_buf = [0u16; 512];
+    let filter: Vec<u16> = "Audio Files (*.wav;*.mp3)\0*.wav;*.mp3\0All Files (*.*)\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: parent,
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        lpstrTitle: w!("Select Sound Cue"),
+        Flags: OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST,
+        ..Default::default()
+    };
+
+    let success = unsafe { GetOpenFileNameW(&mut ofn).as_bool() };
+    if success {
+        let nul_pos = file_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(file_buf.len());
+        let selected = String::from_utf16_lossy(&file_buf[..nul_pos]);
+        let trimmed = selected.trim();
+        if !trimmed.is_empty() {
+            let path = std::path::Path::new(trimmed);
+            let exe_dir = AppConfig::get_exe_dir();
+            let sounds_dir = exe_dir.join("sounds");
+
+            if let Ok(rel) = path.strip_prefix(&sounds_dir) {
+                return Some(rel.to_string_lossy().to_string());
+            } else if let Ok(rel) = path.strip_prefix(&exe_dir) {
+                return Some(rel.to_string_lossy().to_string());
+            }
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<String>>) {
+    let mut options = vec![
+        "off.wav".to_string(),
+        "on.wav".to_string(),
+        "Mute".to_string(),
+        "Unmute".to_string(),
+        "Tick".to_string(),
+        "Enable".to_string(),
+        "Disable".to_string(),
+        "None".to_string(),
+    ];
+
+    // Discover custom sound files in sounds/ subfolder beside executable
+    let exe_dir = AppConfig::get_exe_dir();
+    let sounds_dir = exe_dir.join("sounds");
+    if sounds_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&sounds_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("mp3") {
+                        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                            if !options.iter().any(|o| o.eq_ignore_ascii_case(name)) {
+                                options.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add recent sounds
+    if let Some(recent_set) = recent {
+        for s in recent_set {
+            if !s.is_empty() && !options.iter().any(|o| o.eq_ignore_ascii_case(s)) {
+                options.push(s.clone());
+            }
+        }
+    }
+
+    // Add current selection if not present
+    let curr_trimmed = current.trim();
+    if !curr_trimmed.is_empty() && !options.iter().any(|o| o.eq_ignore_ascii_case(curr_trimmed)) {
+        options.push(curr_trimmed.to_string());
+    }
+
     unsafe {
         let _ = SendMessageW(cmb, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
         let mut selected = 0;
-        for (i, &opt) in options.iter().enumerate() {
+        for (i, opt) in options.iter().enumerate() {
             let wide: Vec<u16> = opt.encode_utf16().chain(std::iter::once(0)).collect();
             let _ = SendMessageW(cmb, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
-            if curr_display.eq_ignore_ascii_case(opt) || current.eq_ignore_ascii_case(opt) {
+            if curr_trimmed.eq_ignore_ascii_case(opt)
+                || (curr_trimmed.to_ascii_lowercase().ends_with("off.wav") && opt == "off.wav")
+                || (curr_trimmed.to_ascii_lowercase().ends_with("on.wav") && opt == "on.wav")
+            {
                 selected = i;
             }
         }
@@ -1623,15 +1813,15 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         )
         .unwrap();
 
-        // Action Buttons: Open conf.ini, Open Folder, GitHub Repo
+        // Action Buttons: Open config.ini, Open Folder, GitHub Repo
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Open conf.ini"),
+            w!("Open config.ini"),
             ws_child_vis_i(BS_PUSHBUTTON),
             35,
             252,
-            120,
+            125,
             26,
             panel,
             HMENU(IDC_BTN_OPEN_CONFIG as isize as *mut _),
@@ -1753,27 +1943,63 @@ fn handle_settings_command(
             cfg.is_mic_keep_volume = !cfg.is_mic_keep_volume;
         }
         IDC_BTN_TEST_MUTE => {
-            let cfg = win.config.read();
-            win.sound.play(&cfg.mute_sound_source, 100);
+            let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
+            let sel = get_combo_selected_text(h_cmb);
+            let cue = if !sel.is_empty() {
+                sel
+            } else {
+                win.config.read().mute_sound_source.clone()
+            };
+            win.sound.play(&cue, 100);
         }
         IDC_BTN_TEST_UNMUTE => {
-            let cfg = win.config.read();
-            win.sound.play(&cfg.unmute_sound_source, 100);
+            let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
+            let sel = get_combo_selected_text(h_cmb);
+            let cue = if !sel.is_empty() {
+                sel
+            } else {
+                win.config.read().unmute_sound_source.clone()
+            };
+            win.sound.play(&cue, 100);
+        }
+        IDC_BTN_BROWSE_MUTE => {
+            if let Some(path) = prompt_browse_sound(hwnd) {
+                let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
+                select_or_add_combo_item(h_cmb, &path);
+                let mut cfg = win.config.write();
+                cfg.mute_sound_source = path.clone();
+                cfg.recent_sounds.insert(path.clone());
+                drop(cfg);
+                win.sound.play(&path, 100);
+            }
+        }
+        IDC_BTN_BROWSE_UNMUTE => {
+            if let Some(path) = prompt_browse_sound(hwnd) {
+                let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
+                select_or_add_combo_item(h_cmb, &path);
+                let mut cfg = win.config.write();
+                cfg.unmute_sound_source = path.clone();
+                cfg.recent_sounds.insert(path.clone());
+                drop(cfg);
+                win.sound.play(&path, 100);
+            }
         }
         IDC_CMB_MUTE_SOUND => {
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
-            let sel = unsafe { SendMessageW(h_cmb, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize };
-            let options = ["Mute", "Unmute", "Tick", "Enable", "Disable", "None"];
-            if sel < options.len() {
-                win.config.write().mute_sound_source = options[sel].to_string();
+            let text = get_combo_selected_text(h_cmb);
+            if !text.is_empty() {
+                let mut cfg = win.config.write();
+                cfg.mute_sound_source = text.clone();
+                cfg.recent_sounds.insert(text);
             }
         }
         IDC_CMB_UNMUTE_SOUND => {
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
-            let sel = unsafe { SendMessageW(h_cmb, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize };
-            let options = ["Mute", "Unmute", "Tick", "Enable", "Disable", "None"];
-            if sel < options.len() {
-                win.config.write().unmute_sound_source = options[sel].to_string();
+            let text = get_combo_selected_text(h_cmb);
+            if !text.is_empty() {
+                let mut cfg = win.config.write();
+                cfg.unmute_sound_source = text.clone();
+                cfg.recent_sounds.insert(text);
             }
         }
         IDC_BTN_ADD_ACTION => {
@@ -1910,6 +2136,7 @@ struct ActionEditorState {
     action_config: ActionConfig,
     capture_session: Arc<HotkeyCaptureSession>,
     config: Arc<RwLock<AppConfig>>,
+    sound: Arc<SoundManager>,
 }
 
 fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) {
@@ -1937,6 +2164,7 @@ fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) 
         action_config: action_cfg,
         capture_session: win.capture_session.clone(),
         config: win.config.clone(),
+        sound: win.sound.clone(),
     });
 
     let hinst = HINSTANCE(unsafe { GetModuleHandleW(None).unwrap_or_default() }.0);
@@ -2356,15 +2584,47 @@ fn init_action_editor_controls(hwnd: HWND, state: &mut ActionEditorState) {
             ws_child_vis_i(CBS_DROPDOWNLIST),
             140,
             213,
-            200,
-            120,
+            160,
+            150,
             hwnd,
             HMENU(IDC_ACT_CMB_SOUND as isize as *mut _),
             hinst,
             None,
         )
         .unwrap();
-        populate_sound_combo(h_snd, &act.sound);
+        populate_sound_combo(h_snd, &act.sound, Some(&state.config.read().recent_sounds));
+
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Test"),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            310,
+            211,
+            55,
+            26,
+            hwnd,
+            HMENU(IDC_ACT_BTN_TEST_SOUND as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Browse..."),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            370,
+            211,
+            70,
+            26,
+            hwnd,
+            HMENU(IDC_ACT_BTN_BROWSE_SOUND as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
 
         // Notification template
         let h_ntf_chk = CreateWindowExW(
@@ -2518,6 +2778,20 @@ fn handle_action_editor_command(hwnd: HWND, id: usize, state: &mut ActionEditorS
                 let _ = SetWindowTextW(h_txt, w!("None"));
             }
         }
+        IDC_ACT_BTN_TEST_SOUND => {
+            let h_snd = unsafe { get_ctrl(hwnd, IDC_ACT_CMB_SOUND) };
+            let sel = get_combo_selected_text(h_snd);
+            if !sel.is_empty() && sel != "None" {
+                state.sound.play(&sel, 100);
+            }
+        }
+        IDC_ACT_BTN_BROWSE_SOUND => {
+            if let Some(path) = prompt_browse_sound(hwnd) {
+                let h_snd = unsafe { get_ctrl(hwnd, IDC_ACT_CMB_SOUND) };
+                select_or_add_combo_item(h_snd, &path);
+                state.sound.play(&path, 100);
+            }
+        }
         IDC_ACT_BTN_SAVE => {
             // Read input fields
             unsafe {
@@ -2559,15 +2833,12 @@ fn handle_action_editor_command(hwnd: HWND, id: usize, state: &mut ActionEditorS
 
                 // Sound
                 let h_snd = get_ctrl(hwnd, IDC_ACT_CMB_SOUND);
-                let snd_sel = SendMessageW(h_snd, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
-                let options = ["Mute", "Unmute", "Tick", "Enable", "Disable", "None"];
-                if snd_sel < options.len() {
-                    state.action_config.sound = if options[snd_sel] == "None" {
-                        String::new()
-                    } else {
-                        options[snd_sel].to_string()
-                    };
-                }
+                let sound_text = get_combo_selected_text(h_snd);
+                state.action_config.sound = if sound_text.is_empty() || sound_text == "None" {
+                    String::new()
+                } else {
+                    sound_text
+                };
 
                 // Notification
                 let h_not_chk = get_ctrl(hwnd, IDC_ACT_CHK_NOTIF);

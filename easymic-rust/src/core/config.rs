@@ -384,7 +384,7 @@ impl AppConfig {
         Some(cfg)
     }
 
-    /// Serializes configuration to a clean, commented INI format (conf.ini).
+    /// Serializes configuration to a clean, commented INI format (config.ini).
     pub fn to_ini(&self) -> String {
         use std::fmt::Write;
         let mut out = String::new();
@@ -394,7 +394,7 @@ impl AppConfig {
             "; =============================================================================="
         )
         .unwrap();
-        writeln!(out, "; EasyMic Configuration File (conf.ini)").unwrap();
+        writeln!(out, "; EasyMic Configuration File (config.ini)").unwrap();
         writeln!(
             out,
             "; =============================================================================="
@@ -830,22 +830,24 @@ impl AppConfig {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 
-    /// Resolves primary configuration file path relative to current executable, working dir, or system install.
-    /// Prioritizes conf.ini / config.ini beside the executable.
+    /// Resolves primary configuration file path relative to current executable.
+    /// Prioritizes config.ini beside the executable.
     pub fn get_config_path() -> PathBuf {
         let exe_dir = Self::get_exe_dir();
 
-        // 1. Next to current executable: conf.ini, config.ini
-        let candidate_ini = exe_dir.join("conf.ini");
-        if candidate_ini.exists() {
-            return candidate_ini;
-        }
+        // 1. Next to current executable: config.ini
         let candidate_config_ini = exe_dir.join("config.ini");
         if candidate_config_ini.exists() {
             return candidate_config_ini;
         }
 
-        // 2. Next to executable fallbacks (legacy conf.json, conf.b)
+        // 2. Compatibility fallback: conf.ini
+        let candidate_conf_ini = exe_dir.join("conf.ini");
+        if candidate_conf_ini.exists() {
+            return candidate_conf_ini;
+        }
+
+        // 3. Next to executable fallbacks (legacy conf.json, conf.b)
         let candidate_json = exe_dir.join("conf.json");
         if candidate_json.exists() {
             return candidate_json;
@@ -855,15 +857,15 @@ impl AppConfig {
             return candidate_b;
         }
 
-        // Default ALWAYS beside the executable:
-        candidate_ini
+        // Default ALWAYS beside the executable: config.ini
+        candidate_config_ini
     }
 
     /// Loads configuration from disk, falling back to default.
-    /// Ensures conf.ini is created beside the executable immediately.
+    /// Ensures config.ini is created beside the executable immediately.
     pub fn load() -> Self {
         let exe_dir = Self::get_exe_dir();
-        let target_ini = exe_dir.join("conf.ini");
+        let target_ini = exe_dir.join("config.ini");
 
         if target_ini.exists() {
             return Self::load_from_path(&target_ini);
@@ -886,7 +888,7 @@ impl AppConfig {
             imported.unwrap_or_default()
         };
 
-        // Always create conf.ini beside the executable immediately
+        // Always create config.ini beside the executable immediately
         let _ = cfg.save_to_path(&target_ini);
         cfg
     }
@@ -959,16 +961,16 @@ impl AppConfig {
         }
     }
 
-    /// Saves configuration to disk beside the executable (conf.ini).
+    /// Saves configuration to disk beside the executable (config.ini).
     pub fn save(&self) -> Result<(), std::io::Error> {
-        let target_path = Self::get_exe_dir().join("conf.ini");
+        let target_path = Self::get_exe_dir().join("config.ini");
         self.save_to_path(&target_path)
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), std::io::Error> {
-        // If the path was an old conf.b binary file, migrate target to conf.ini to avoid corrupting binary
+        // If the path was an old conf.b binary file, migrate target to config.ini to avoid corrupting binary
         let target_path = if path.extension().and_then(|e| e.to_str()) == Some("b") {
-            path.with_extension("ini")
+            path.with_file_name("config.ini")
         } else {
             path.to_path_buf()
         };
@@ -1083,7 +1085,10 @@ mod tests {
         let exe_dir = AppConfig::get_exe_dir();
         assert_eq!(path.parent().unwrap(), exe_dir);
         assert!(
-            path.ends_with("conf.ini") || path.ends_with("conf.b") || path.ends_with("conf.json")
+            path.ends_with("config.ini")
+                || path.ends_with("conf.ini")
+                || path.ends_with("conf.b")
+                || path.ends_with("conf.json")
         );
     }
 

@@ -113,7 +113,7 @@ impl AppLifecycle {
                 WS_EX_TOOLWINDOW,
                 class_name,
                 w!("EasyMicCoordinator"),
-                WS_POPUP,
+                WS_POPUP | WS_VISIBLE,
                 0,
                 0,
                 0,
@@ -222,13 +222,14 @@ unsafe extern "system" fn coordinator_wndproc(
                 let coord = COORDINATOR.lock().clone();
                 if let Some(life) = coord {
                     if let Some(cmd) = life.tray.show_context_menu() {
-                        handle_tray_command(hwnd, cmd, &life);
+                        unsafe {
+                            let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(cmd), LPARAM(0));
+                        }
                     }
                 }
             } else if event == WM_LBUTTONDBLCLK {
-                let coord = COORDINATOR.lock().clone();
-                if let Some(life) = coord {
-                    handle_tray_command(hwnd, ID_TRAY_SETTINGS, &life);
+                unsafe {
+                    let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(ID_TRAY_SETTINGS), LPARAM(0));
                 }
             }
             LRESULT(0)
@@ -254,7 +255,7 @@ fn handle_tray_command(_hwnd: HWND, cmd: usize, life: &AppLifecycle) {
         ID_TRAY_SETTINGS => {
             SettingsWindow::open(
                 life.hinstance,
-                life.main_hwnd,
+                HWND::default(),
                 life.config.clone(),
                 life.state.clone(),
                 life.audio_manager.clone(),
