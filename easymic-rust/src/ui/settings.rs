@@ -267,7 +267,7 @@ impl SettingsWindow {
         }
 
         let orig = config.read().clone();
-        let autostart = registry::is_in_auto_startup() || config.read().start_with_windows;
+        let autostart = config.read().start_with_windows;
 
         // Enable indicator dragging while settings dialog is open
         indicator.toggle_interactivity(true);
@@ -361,14 +361,12 @@ impl SettingsWindow {
         }
 
         // Apply autostart registry setting
-        if self.autostart_pending != self.autostart_initial {
-            if self.autostart_pending {
-                registry::add_to_auto_startup();
-            } else {
-                registry::remove_from_auto_startup();
-            }
-            self.autostart_initial = self.autostart_pending;
+        if self.autostart_pending {
+            registry::add_to_auto_startup();
+        } else {
+            registry::remove_from_auto_startup();
         }
+        self.autostart_initial = self.autostart_pending;
 
         // Sync volume to audio device if mic volume is configured
         let cfg = self.config.read();
@@ -387,6 +385,11 @@ impl SettingsWindow {
         // Restore original config
         *self.config.write() = self.orig_config.clone();
         let _ = self.orig_config.save();
+        if self.orig_config.start_with_windows {
+            registry::add_to_auto_startup();
+        } else {
+            registry::remove_from_auto_startup();
+        }
         self.hooks.update_bindings();
         self.indicator.render();
     }

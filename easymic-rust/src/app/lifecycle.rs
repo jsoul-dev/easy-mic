@@ -51,6 +51,16 @@ impl AppLifecycle {
         // 1. Load configuration
         let config = Arc::new(RwLock::new(AppConfig::load()));
 
+        // Sync Windows autostart registry state with config.ini
+        {
+            let cfg = config.read();
+            if cfg.start_with_windows {
+                crate::app::registry::add_to_auto_startup();
+            } else {
+                crate::app::registry::remove_from_auto_startup();
+            }
+        }
+
         // 2. Authoritative state & diagnostics
         let state = Arc::new(AuthoritativeState::new());
         let diagnostics = Arc::new(DiagnosticsBuffer::new(100));
