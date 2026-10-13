@@ -116,7 +116,7 @@ cargo test --release
 ## Credits & Acknowledgments
 
 * **Original Author**: [k1tbyte](https://github.com/k1tbyte) for the original [Easymic](https://github.com/k1tbyte/easymic) concept, icon designs, and audio assets.
-* **Rust Rewrite & Rebranding**: [jsoul-dev](https://github.com/jsoul-dev) & the Antigravity Team for the ground-up Rust architecture, Win32 COM modernization, and user experience refinements.
+* **Rust Rewrite & Rebranding**: [jsoul-dev](https://github.com/jsoul-dev) for the ground-up Rust architecture, Win32 COM modernization, and user experience refinements.
 
 ---
 
