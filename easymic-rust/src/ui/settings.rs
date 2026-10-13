@@ -303,10 +303,10 @@ impl SettingsWindow {
             let _ = RegisterClassExW(&wc);
 
             let hwnd = CreateWindowExW(
-                WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+                WS_EX_DLGMODALFRAME | WS_EX_APPWINDOW,
                 class_name,
                 w!("EasyMic Settings"),
-                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
                 640,
@@ -2181,7 +2181,7 @@ fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) 
         let _ = RegisterClassExW(&wc);
 
         let hwnd = CreateWindowExW(
-            WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+            WS_EX_DLGMODALFRAME,
             class_name,
             w!("Edit Action"),
             WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
