@@ -23,6 +23,7 @@
 
 ### Low-Overhead Global Hotkeys
 - **Dedicated Input Subsystem**: Processes keyboard and mouse input on an isolated low-level hook thread, dispatching actions in sub-millisecond time without introducing input lag to games or apps.
+- **Zero Mouse Lag Under Saturated CPU**: In the legacy C++ version, an always-active global low-level mouse hook (`WH_MOUSE_LL`) intercepted every single mouse event, causing severe cursor stuttering and lag whenever CPU usage spiked. Easy-Mic completely eliminates this by conditionally skipping the mouse hook unless mouse buttons are explicitly bound to actions.
 - **Flexible Action Triggers**:
   - **Toggle Mute** — Instant one-touch state toggle (default: `Shift + Z`)
   - **Push to Talk / Mute** — Hold-to-talk or hold-to-mute with key release detection
@@ -58,6 +59,7 @@
 | :--- | :--- | :--- |
 | **Language** | C++23 | **Rust 2021 Edition** |
 | **WinAPI Bindings** | Raw Win32 C headers | **`windows-rs` 0.58 (Type-safe COM & Win32)** |
+| **Mouse Cursor Lag** | Global `WH_MOUSE_LL` hook lagged cursor when CPU saturated | **Zero mouse lag: `WH_MOUSE_LL` skipped unless mouse hotkeys bound** |
 | **Config Format** | Binary Glaze BEVE (`conf.b`) | **Clean INI (`config.ini`) with auto-migration** |
 | **Embedded Audio** | External folder dependencies | **Embedded directly in binary (`include_bytes!`)** |
 | **Memory Footprint** | ~3–5 MB | **~1.5–2 MB Resident Set Size** |
@@ -70,8 +72,7 @@
 
 ### 1. Download
 Grab the latest release from the [Releases](https://github.com/jsoul-dev/easy-mic/releases) page:
-* `Easy-Mic.exe` — Standalone portable executable
-* `config.ini` — Default configuration file
+* `Easy-Mic.exe` — Standalone portable executable (creates its default `config.ini` automatically beside the exe)
 
 ### 2. Run
 Place `Easy-Mic.exe` in any folder of your choice and run it.  
