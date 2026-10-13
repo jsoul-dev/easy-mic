@@ -119,6 +119,8 @@ pub struct AppConfig {
     pub mute_sound_source: String,
     #[serde(default = "default_unmute_sound")]
     pub unmute_sound_source: String,
+    #[serde(default)]
+    pub start_with_windows: bool,
 }
 
 fn default_bell_volume() -> i8 {
@@ -201,6 +203,7 @@ impl Default for AppConfig {
             recent_sounds,
             mute_sound_source: "off.wav".to_string(),
             unmute_sound_source: "on.wav".to_string(),
+            start_with_windows: false,
         }
     }
 }
@@ -381,8 +384,470 @@ impl AppConfig {
         Some(cfg)
     }
 
-    /// Resolves default configuration file path relative to current executable, working dir, or system install.
+    /// Serializes configuration to a clean, commented INI format (conf.ini).
+    pub fn to_ini(&self) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
+
+        writeln!(
+            out,
+            "; =============================================================================="
+        )
+        .unwrap();
+        writeln!(out, "; EasyMic Configuration File (conf.ini)").unwrap();
+        writeln!(
+            out,
+            "; =============================================================================="
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(out, "[General]").unwrap();
+        writeln!(out, "; Application configuration format version").unwrap();
+        writeln!(out, "Version = {}", self.version).unwrap();
+        writeln!(out, "; Launch EasyMic automatically on Windows startup").unwrap();
+        writeln!(out, "StartWithWindows = {}", self.start_with_windows).unwrap();
+        writeln!(
+            out,
+            "; Run with elevated privileges silently via Task Scheduler"
+        )
+        .unwrap();
+        writeln!(out, "SkipUAC = {}", self.is_skip_uac_enabled).unwrap();
+        writeln!(out, "; Check for application updates on startup").unwrap();
+        writeln!(out, "CheckForUpdates = {}", self.is_updates_enabled).unwrap();
+        writeln!(out, "; Automatically download and install updates").unwrap();
+        writeln!(out, "AutoUpdates = {}", self.is_auto_update_enabled).unwrap();
+        writeln!(out, "; Display notification toasts for microphone actions").unwrap();
+        writeln!(out, "NotificationsEnabled = {}", self.notifications_enabled).unwrap();
+        writeln!(
+            out,
+            "; Multi-press window in milliseconds (for double/triple press hotkeys)"
+        )
+        .unwrap();
+        writeln!(out, "MultiPressWindowMs = {}", self.multi_press_window_ms).unwrap();
+        if !self.skipped_versions.is_empty() {
+            let versions: Vec<&str> = self.skipped_versions.iter().map(|s| s.as_str()).collect();
+            writeln!(out, "SkippedVersions = {}", versions.join("; ")).unwrap();
+        }
+        writeln!(out).unwrap();
+
+        writeln!(out, "[Indicator]").unwrap();
+        writeln!(
+            out,
+            "; Display state: Hidden (0), Muted (1), MutedOrTalk (2)"
+        )
+        .unwrap();
+        let state_str = match self.indicator_state {
+            IndicatorState::Hidden => "Hidden",
+            IndicatorState::Muted => "Muted",
+            IndicatorState::MutedOrTalk => "MutedOrTalk",
+        };
+        writeln!(out, "State = {}", state_str).unwrap();
+        writeln!(out, "; Indicator icon size in pixels").unwrap();
+        writeln!(out, "Size = {}", self.indicator_size).unwrap();
+        writeln!(out, "; Voice activity volume threshold (0.0 to 1.0)").unwrap();
+        writeln!(
+            out,
+            "VolumeThreshold = {:.4}",
+            self.indicator_volume_threshold
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "; Hide indicator when active window is fullscreen or inactive"
+        )
+        .unwrap();
+        writeln!(out, "HideWhenInactive = {}", self.hide_when_inactive).unwrap();
+        writeln!(out, "; Exclude overlay window from screen recording tools").unwrap();
+        writeln!(out, "ExcludeFromCapture = {}", self.exclude_from_capture).unwrap();
+        writeln!(
+            out,
+            "; Maintain top-most Z-order over exclusive fullscreen windows"
+        )
+        .unwrap();
+        writeln!(out, "OnTopExclusive = {}", self.on_top_exclusive).unwrap();
+        writeln!(out, "; Saved position on screen").unwrap();
+        writeln!(out, "PositionX = {}", self.window_pos_x).unwrap();
+        writeln!(out, "PositionY = {}", self.window_pos_y).unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(out, "[Sounds]").unwrap();
+        writeln!(
+            out,
+            "; Hardware microphone volume (-1 to disable volume enforcement, 0-100)"
+        )
+        .unwrap();
+        writeln!(out, "MicVolume = {}", self.mic_volume).unwrap();
+        writeln!(out, "; Continuously enforce configured microphone volume").unwrap();
+        writeln!(out, "KeepMicVolume = {}", self.is_mic_keep_volume).unwrap();
+        writeln!(out, "; Feedback sound volume (0-100 percent)").unwrap();
+        writeln!(out, "BellVolume = {}", self.bell_volume).unwrap();
+        writeln!(out, "; Sound cue played when muting the microphone").unwrap();
+        writeln!(out, "MuteSound = {}", self.mute_sound_source).unwrap();
+        writeln!(out, "; Sound cue played when unmuting the microphone").unwrap();
+        writeln!(out, "UnmuteSound = {}", self.unmute_sound_source).unwrap();
+        if !self.recent_sounds.is_empty() {
+            let sounds: Vec<&str> = self.recent_sounds.iter().map(|s| s.as_str()).collect();
+            writeln!(out, "RecentSounds = {}", sounds.join("; ")).unwrap();
+        }
+        writeln!(out).unwrap();
+
+        writeln!(
+            out,
+            "; =============================================================================="
+        )
+        .unwrap();
+        writeln!(out, "; Actions Configuration").unwrap();
+        writeln!(
+            out,
+            "; =============================================================================="
+        )
+        .unwrap();
+
+        for (idx, action) in self.actions.iter().enumerate() {
+            writeln!(out, "[Action.{}]", idx + 1).unwrap();
+            writeln!(out, "Name = {}", action.name).unwrap();
+            writeln!(out, "Type = {}", action.built_in).unwrap();
+            let hotkey_str = crate::input::keys::get_hotkey_name(action.hotkey);
+            writeln!(out, "Hotkey = {}", hotkey_str).unwrap();
+            writeln!(out, "Presses = {}", action.presses).unwrap();
+            writeln!(out, "OnRelease = {}", action.on_release).unwrap();
+            writeln!(out, "Block = {}", action.block).unwrap();
+            writeln!(out, "TapOnly = {}", action.tap_only).unwrap();
+            writeln!(out, "Sound = {}", action.sound).unwrap();
+            writeln!(out, "SoundVolume = {}", action.sound_volume).unwrap();
+            writeln!(out, "Notification = {}", action.notification).unwrap();
+            writeln!(out, "ShowNotification = {}", action.show_notification).unwrap();
+            writeln!(out, "Command = {}", action.command).unwrap();
+            writeln!(out, "Args = {}", action.args).unwrap();
+            writeln!(out).unwrap();
+        }
+
+        out
+    }
+
+    /// Parses configuration from INI text.
+    pub fn parse_ini(content: &str) -> Option<Self> {
+        let content = content.strip_prefix('\u{FEFF}').unwrap_or(content);
+        let mut cfg = Self::default();
+        let mut parsed_any = false;
+
+        let mut current_section = String::new();
+        let mut current_action: Option<ActionConfig> = None;
+        let mut custom_actions: Vec<ActionConfig> = Vec::new();
+
+        let finalize_action = |act: &mut Option<ActionConfig>, actions: &mut Vec<ActionConfig>| {
+            if let Some(mut a) = act.take() {
+                if !a.name.is_empty() || !a.built_in.is_empty() || a.hotkey != 0 {
+                    if a.name.is_empty() {
+                        a.name = if !a.built_in.is_empty() {
+                            a.built_in.clone()
+                        } else {
+                            "Action".to_string()
+                        };
+                    }
+                    if a.built_in.is_empty() && a.command.is_empty() {
+                        a.built_in = "Toggle mute".to_string();
+                    }
+                    actions.push(a);
+                }
+            }
+        };
+
+        for raw_line in content.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+                continue;
+            }
+
+            if line.starts_with('[') && line.ends_with(']') {
+                let section_name = line[1..line.len() - 1].trim();
+                let lower_sec = section_name.to_ascii_lowercase();
+
+                if lower_sec.starts_with("action") {
+                    finalize_action(&mut current_action, &mut custom_actions);
+                    current_action = Some(ActionConfig::default());
+                } else {
+                    finalize_action(&mut current_action, &mut custom_actions);
+                }
+
+                current_section = section_name.to_string();
+                parsed_any = true;
+                continue;
+            }
+
+            // Parse key-value: Key = Value or Key: Value
+            let (key, val) = if let Some((k, v)) = line.split_once('=') {
+                (k.trim(), v.trim())
+            } else if let Some((k, v)) = line.split_once(':') {
+                (k.trim(), v.trim())
+            } else {
+                continue;
+            };
+
+            // Strip trailing inline comment if separated by whitespace and semicolon/hash
+            let val = {
+                let mut v_clean = val;
+                if (v_clean.starts_with('"') && v_clean.ends_with('"') && v_clean.len() >= 2)
+                    || (v_clean.starts_with('\'') && v_clean.ends_with('\'') && v_clean.len() >= 2)
+                {
+                    v_clean = &v_clean[1..v_clean.len() - 1];
+                } else {
+                    for (idx, _) in v_clean.match_indices([';', '#']) {
+                        if idx > 0 && v_clean.as_bytes()[idx - 1].is_ascii_whitespace() {
+                            v_clean = v_clean[..idx].trim_end();
+                            break;
+                        }
+                    }
+                }
+                v_clean
+            };
+
+            let sec_lower = current_section.to_ascii_lowercase();
+            let key_lower = key.to_ascii_lowercase();
+
+            parsed_any = true;
+
+            if sec_lower.starts_with("action") {
+                if let Some(ref mut act) = current_action {
+                    match key_lower.as_str() {
+                        "name" => act.name = val.to_string(),
+                        "type" | "builtin" | "built_in" => act.built_in = val.to_string(),
+                        "command" => act.command = val.to_string(),
+                        "args" => act.args = val.to_string(),
+                        "sound" => act.sound = val.to_string(),
+                        "notification" => act.notification = val.to_string(),
+                        "hotkey" | "hotkeymask" => {
+                            act.hotkey = crate::input::keys::parse_hotkey(val);
+                        }
+                        "presses" => {
+                            if let Ok(n) = val.parse::<u8>() {
+                                act.presses = n;
+                            }
+                        }
+                        "onrelease" | "on_release" => {
+                            if let Some(b) = parse_bool(val) {
+                                act.on_release = b;
+                            }
+                        }
+                        "block" => {
+                            if let Some(b) = parse_bool(val) {
+                                act.block = b;
+                            }
+                        }
+                        "taponly" | "tap_only" => {
+                            if let Some(b) = parse_bool(val) {
+                                act.tap_only = b;
+                            }
+                        }
+                        "soundvolume" | "sound_volume" => {
+                            if let Ok(v) = val.parse::<u8>() {
+                                act.sound_volume = v;
+                            }
+                        }
+                        "shownotification" | "show_notification" => {
+                            if let Some(b) = parse_bool(val) {
+                                act.show_notification = b;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            } else if sec_lower == "general" {
+                match key_lower.as_str() {
+                    "version" => {
+                        if let Ok(v) = val.parse::<i32>() {
+                            cfg.version = v;
+                        }
+                    }
+                    "startwithwindows" | "autostart" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.start_with_windows = b;
+                        }
+                    }
+                    "skipuac" | "isskipuacenabled" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.is_skip_uac_enabled = b;
+                        }
+                    }
+                    "checkforupdates" | "isupdatesenabled" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.is_updates_enabled = b;
+                        }
+                    }
+                    "autoupdates" | "isautoupdateenabled" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.is_auto_update_enabled = b;
+                        }
+                    }
+                    "notificationsenabled" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.notifications_enabled = b;
+                        }
+                    }
+                    "multipresswindowms" => {
+                        if let Ok(ms) = val.parse::<u16>() {
+                            cfg.multi_press_window_ms = ms;
+                        }
+                    }
+                    "skippedversions" => {
+                        for v in val.split([',', ';']) {
+                            let item = v.trim();
+                            if !item.is_empty() {
+                                cfg.skipped_versions.insert(item.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            } else if sec_lower == "indicator" {
+                match key_lower.as_str() {
+                    "state" | "indicatorstate" => {
+                        cfg.indicator_state = parse_indicator_state(val);
+                    }
+                    "size" | "indicatorsize" => {
+                        if let Ok(s) = val.parse::<u8>() {
+                            cfg.indicator_size = s;
+                        }
+                    }
+                    "volumethreshold" | "indicatorvolumethreshold" => {
+                        if let Ok(th) = val.parse::<f32>() {
+                            cfg.indicator_volume_threshold = th;
+                        }
+                    }
+                    "hidewheninactive" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.hide_when_inactive = b;
+                        }
+                    }
+                    "excludefromcapture" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.exclude_from_capture = b;
+                        }
+                    }
+                    "ontopexclusive" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.on_top_exclusive = b;
+                        }
+                    }
+                    "positionx" | "windowposx" => {
+                        if let Ok(x) = val.parse::<i32>() {
+                            cfg.window_pos_x = x;
+                        }
+                    }
+                    "positiony" | "windowposy" => {
+                        if let Ok(y) = val.parse::<i32>() {
+                            cfg.window_pos_y = y;
+                        }
+                    }
+                    _ => {}
+                }
+            } else if sec_lower == "sounds" || sec_lower == "audio" || sec_lower == "sound" {
+                match key_lower.as_str() {
+                    "micvolume" => {
+                        if let Ok(vol) = val.parse::<i8>() {
+                            cfg.mic_volume = vol;
+                        }
+                    }
+                    "keepmicvolume" | "ismickeepvolume" => {
+                        if let Some(b) = parse_bool(val) {
+                            cfg.is_mic_keep_volume = b;
+                        }
+                    }
+                    "bellvolume" => {
+                        if let Ok(vol) = val.parse::<i8>() {
+                            cfg.bell_volume = vol;
+                        }
+                    }
+                    "mutesound" | "mutesoundsource" => {
+                        if !val.is_empty() {
+                            cfg.mute_sound_source = val.to_string();
+                            cfg.recent_sounds.insert(val.to_string());
+                        }
+                    }
+                    "unmutesound" | "unmutesoundsource" => {
+                        if !val.is_empty() {
+                            cfg.unmute_sound_source = val.to_string();
+                            cfg.recent_sounds.insert(val.to_string());
+                        }
+                    }
+                    "recentsounds" => {
+                        for s in val.split([',', ';']) {
+                            let item = s.trim();
+                            if !item.is_empty() {
+                                cfg.recent_sounds.insert(item.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            } else if sec_lower == "hotkeys"
+                && (key_lower == "togglemute"
+                    || key_lower == "toggle_mute"
+                    || key_lower == "toggle mute")
+            {
+                let mask = crate::input::keys::parse_hotkey(val);
+                if mask != 0 {
+                    cfg.actions = vec![ActionConfig {
+                        name: "Toggle mute".to_string(),
+                        built_in: "Toggle mute".to_string(),
+                        command: String::new(),
+                        args: String::new(),
+                        sound: String::new(),
+                        notification: "Mic {mic}".to_string(),
+                        hotkey: mask,
+                        on_release: false,
+                        presses: 1,
+                        block: false,
+                        tap_only: false,
+                        sound_volume: 100,
+                        show_notification: false,
+                    }];
+                }
+            }
+        }
+
+        finalize_action(&mut current_action, &mut custom_actions);
+
+        if !custom_actions.is_empty() {
+            cfg.actions = custom_actions;
+        }
+
+        if parsed_any {
+            Some(cfg)
+        } else {
+            None
+        }
+    }
+
+    /// Resolves primary configuration file path relative to current executable, working dir, or system install.
+    /// Prioritizes conf.ini / config.ini, then falls back to conf.json / conf.b.
     pub fn get_config_path() -> PathBuf {
+        // 1. Next to current executable: conf.ini, config.ini
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let candidate_ini = parent.join("conf.ini");
+                if candidate_ini.exists() {
+                    return candidate_ini;
+                }
+                let candidate_config_ini = parent.join("config.ini");
+                if candidate_config_ini.exists() {
+                    return candidate_config_ini;
+                }
+            }
+        }
+
+        // 2. Local working directory: conf.ini, config.ini
+        let local_ini = PathBuf::from("conf.ini");
+        if local_ini.exists() {
+            return local_ini;
+        }
+        let local_config_ini = PathBuf::from("config.ini");
+        if local_config_ini.exists() {
+            return local_config_ini;
+        }
+
+        // 3. Fallbacks next to executable (legacy conf.json, conf.b)
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
                 let candidate_json = parent.join("conf.json");
@@ -395,6 +860,8 @@ impl AppConfig {
                 }
             }
         }
+
+        // 4. Local working directory fallbacks (conf.json, conf.b)
         let local_json = PathBuf::from("conf.json");
         if local_json.exists() {
             return local_json;
@@ -403,29 +870,61 @@ impl AppConfig {
         if local_b.exists() {
             return local_b;
         }
+
+        // 5. System install directory: Program Files\Easymic
         if let Ok(pf) = std::env::var("ProgramFiles") {
-            let system_b = PathBuf::from(&pf).join("Easymic").join("conf.b");
-            if system_b.exists() {
-                return system_b;
+            let sys_dir = PathBuf::from(&pf).join("Easymic");
+            let sys_ini = sys_dir.join("conf.ini");
+            if sys_ini.exists() {
+                return sys_ini;
             }
-            let system_json = PathBuf::from(&pf).join("Easymic").join("conf.json");
-            if system_json.exists() {
-                return system_json;
+            let sys_config_ini = sys_dir.join("config.ini");
+            if sys_config_ini.exists() {
+                return sys_config_ini;
+            }
+            let sys_b = sys_dir.join("conf.b");
+            if sys_b.exists() {
+                return sys_b;
+            }
+            let sys_json = sys_dir.join("conf.json");
+            if sys_json.exists() {
+                return sys_json;
             }
         }
 
+        // 6. Default to conf.ini next to executable or working dir
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
-                return parent.join("conf.json");
+                return parent.join("conf.ini");
             }
         }
-        PathBuf::from("conf.json")
+        PathBuf::from("conf.ini")
     }
 
     /// Loads configuration from disk, falling back to default.
+    /// If a legacy configuration exists (e.g. conf.json or conf.b) and conf.ini does not,
+    /// it automatically migrates the configuration to conf.ini.
     pub fn load() -> Self {
         let path = Self::get_config_path();
-        Self::load_from_path(&path)
+        let cfg = Self::load_from_path(&path);
+
+        // If loaded from legacy path and conf.ini does not exist, save as conf.ini
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !ext.eq_ignore_ascii_case("ini") {
+            let ini_path = path.with_file_name("conf.ini");
+            if !ini_path.exists() {
+                if let Err(e) = cfg.save_to_path(&ini_path) {
+                    log::debug!("Could not auto-create conf.ini during migration: {}", e);
+                } else {
+                    log::info!(
+                        "Successfully migrated legacy configuration to {:?}",
+                        ini_path
+                    );
+                }
+            }
+        }
+
+        cfg
     }
 
     pub fn load_from_path(path: &Path) -> Self {
@@ -436,10 +935,22 @@ impl AppConfig {
 
         match fs::read(path) {
             Ok(bytes) => {
-                // Try JSON first if it looks like UTF-8 JSON
-                if bytes.starts_with(b"{")
-                    || path.extension().and_then(|e| e.to_str()) == Some("json")
-                {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let is_ini_ext = ext.eq_ignore_ascii_case("ini");
+                let is_json_ext = ext.eq_ignore_ascii_case("json");
+
+                // If it has .ini extension or text that is not JSON, try INI first
+                if is_ini_ext || (!is_json_ext && !bytes.starts_with(b"{")) {
+                    if let Ok(text) = std::str::from_utf8(&bytes) {
+                        if let Some(cfg) = Self::parse_ini(text) {
+                            log::info!("Loaded configuration INI from {:?}", path);
+                            return cfg;
+                        }
+                    }
+                }
+
+                // Try JSON
+                if is_json_ext || bytes.starts_with(b"{") {
                     if let Ok(mut cfg) = serde_json::from_slice::<AppConfig>(&bytes) {
                         log::info!("Loaded configuration JSON from {:?}", path);
                         if cfg.actions.is_empty() {
@@ -448,12 +959,20 @@ impl AppConfig {
                         return cfg;
                     }
                 }
+
                 // Try BEVE conf.b binary format
                 if let Some(cfg) = Self::parse_beve(&bytes) {
                     log::info!("Loaded configuration BEVE (conf.b) from {:?}", path);
                     return cfg;
                 }
-                // Fallback attempt JSON deserialization anyway
+
+                // Fallback attempt text INI or JSON
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    if let Some(cfg) = Self::parse_ini(text) {
+                        log::info!("Loaded configuration INI from {:?}", path);
+                        return cfg;
+                    }
+                }
                 if let Ok(mut cfg) = serde_json::from_slice::<AppConfig>(&bytes) {
                     log::info!("Loaded configuration from {:?}", path);
                     if cfg.actions.is_empty() {
@@ -461,6 +980,7 @@ impl AppConfig {
                     }
                     return cfg;
                 }
+
                 log::warn!("Failed to parse config from {:?}, using defaults", path);
                 Self::default()
             }
@@ -475,18 +995,50 @@ impl AppConfig {
         }
     }
 
-    /// Saves configuration to disk.
+    /// Saves configuration to disk (defaults to conf.ini).
     pub fn save(&self) -> Result<(), std::io::Error> {
         let path = Self::get_config_path();
         self.save_to_path(&path)
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(path, json)?;
-        log::info!("Saved configuration to {:?}", path);
+        // If the path was an old conf.b binary file, migrate target to conf.ini to avoid corrupting binary
+        let target_path = if path.extension().and_then(|e| e.to_str()) == Some("b") {
+            path.with_extension("ini")
+        } else {
+            path.to_path_buf()
+        };
+
+        if target_path.extension().and_then(|e| e.to_str()) == Some("json") {
+            let json = serde_json::to_string_pretty(self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            fs::write(&target_path, json)?;
+        } else {
+            let ini = self.to_ini();
+            fs::write(&target_path, ini)?;
+        }
+
+        log::info!("Saved configuration to {:?}", target_path);
         Ok(())
+    }
+}
+
+fn parse_bool(s: &str) -> Option<bool> {
+    let lower = s.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "true" | "1" | "yes" | "on" | "enabled" => Some(true),
+        "false" | "0" | "no" | "off" | "disabled" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_indicator_state(s: &str) -> IndicatorState {
+    let lower = s.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "0" | "hidden" => IndicatorState::Hidden,
+        "1" | "muted" => IndicatorState::Muted,
+        "2" | "mutedortalk" | "mutedortalking" | "muted_or_talk" => IndicatorState::MutedOrTalk,
+        _ => IndicatorState::Hidden,
     }
 }
 
@@ -513,7 +1065,106 @@ mod tests {
     }
 
     #[test]
-    fn test_config_serialization_roundtrip() {
+    fn test_ini_serialization_roundtrip() {
+        let cfg = AppConfig::default();
+        let ini_text = cfg.to_ini();
+        assert!(ini_text.contains("[General]"));
+        assert!(ini_text.contains("[Indicator]"));
+        assert!(ini_text.contains("[Sounds]"));
+        assert!(ini_text.contains("[Action.1]"));
+        assert!(ini_text.contains("Hotkey = SHIFT + Z"));
+
+        let parsed = AppConfig::parse_ini(&ini_text).expect("parse default ini");
+        assert_eq!(parsed.bell_volume, cfg.bell_volume);
+        assert_eq!(parsed.mic_volume, cfg.mic_volume);
+        assert_eq!(parsed.indicator_size, cfg.indicator_size);
+        assert_eq!(parsed.indicator_state, cfg.indicator_state);
+        assert!((parsed.indicator_volume_threshold - cfg.indicator_volume_threshold).abs() < 1e-4);
+        assert_eq!(parsed.is_mic_keep_volume, cfg.is_mic_keep_volume);
+        assert_eq!(parsed.is_skip_uac_enabled, cfg.is_skip_uac_enabled);
+        assert_eq!(parsed.actions.len(), cfg.actions.len());
+        assert_eq!(parsed.actions[0].name, cfg.actions[0].name);
+        assert_eq!(parsed.actions[0].hotkey, cfg.actions[0].hotkey);
+        assert_eq!(parsed.mute_sound_source, cfg.mute_sound_source);
+        assert_eq!(parsed.unmute_sound_source, cfg.unmute_sound_source);
+    }
+
+    #[test]
+    fn test_ini_custom_values() {
+        let mut cfg = AppConfig::default();
+        cfg.bell_volume = 35;
+        cfg.mic_volume = 80;
+        cfg.indicator_size = 24;
+        cfg.indicator_state = IndicatorState::MutedOrTalk;
+        cfg.window_pos_x = 120;
+        cfg.window_pos_y = 240;
+        cfg.mute_sound_source = "custom_off.wav".to_string();
+        cfg.unmute_sound_source = "custom_on.wav".to_string();
+
+        let ini_text = cfg.to_ini();
+        let parsed = AppConfig::parse_ini(&ini_text).expect("parse custom ini");
+        assert_eq!(parsed.bell_volume, 35);
+        assert_eq!(parsed.mic_volume, 80);
+        assert_eq!(parsed.indicator_size, 24);
+        assert_eq!(parsed.indicator_state, IndicatorState::MutedOrTalk);
+        assert_eq!(parsed.window_pos_x, 120);
+        assert_eq!(parsed.window_pos_y, 240);
+        assert_eq!(parsed.mute_sound_source, "custom_off.wav");
+        assert_eq!(parsed.unmute_sound_source, "custom_on.wav");
+    }
+
+    #[test]
+    fn test_ini_forgiving_parser() {
+        let snippet = r#"
+        ; Custom configuration test
+        [general]
+        version = 2
+        skipuac = 1
+        startwithwindows = true
+        multipresswindowms = 250
+
+        [indicator]
+        state = muted
+        size = 20
+        volumethreshold = 0.005 ; inline comment test
+        positionx = 50
+        positiony = 100
+
+        [sounds]
+        micvolume = 95
+        bellvolume = 40
+        mutesound = "my_mute.wav"
+        unmutesound = 'my_unmute.wav'
+
+        [action.1]
+        name = Custom Toggle
+        type = Toggle mute
+        hotkey = ctrl + alt + z
+        presses = 1
+        block = yes
+        "#;
+
+        let parsed = AppConfig::parse_ini(snippet).expect("parse forgiving snippet");
+        assert_eq!(parsed.version, 2);
+        assert!(parsed.is_skip_uac_enabled);
+        assert!(parsed.start_with_windows);
+        assert_eq!(parsed.multi_press_window_ms, 250);
+        assert_eq!(parsed.indicator_state, IndicatorState::Muted);
+        assert_eq!(parsed.indicator_size, 20);
+        assert!((parsed.indicator_volume_threshold - 0.005).abs() < 1e-4);
+        assert_eq!(parsed.window_pos_x, 50);
+        assert_eq!(parsed.window_pos_y, 100);
+        assert_eq!(parsed.mic_volume, 95);
+        assert_eq!(parsed.bell_volume, 40);
+        assert_eq!(parsed.mute_sound_source, "my_mute.wav");
+        assert_eq!(parsed.unmute_sound_source, "my_unmute.wav");
+        assert_eq!(parsed.actions.len(), 1);
+        assert_eq!(parsed.actions[0].name, "Custom Toggle");
+        assert!(parsed.actions[0].block);
+    }
+
+    #[test]
+    fn test_config_json_serialization_roundtrip() {
         let mut cfg = AppConfig::default();
         cfg.bell_volume = 40;
         cfg.window_pos_x = 100;

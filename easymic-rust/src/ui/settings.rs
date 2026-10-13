@@ -162,7 +162,7 @@ impl SettingsWindow {
         }
 
         let orig = config.read().clone();
-        let autostart = registry::is_in_auto_startup();
+        let autostart = registry::is_in_auto_startup() || config.read().start_with_windows;
 
         // Enable indicator dragging while settings dialog is open
         indicator.toggle_interactivity(true);
@@ -237,6 +237,7 @@ impl SettingsWindow {
             let mut cfg = self.config.write();
             cfg.window_pos_x = pos_x;
             cfg.window_pos_y = pos_y;
+            cfg.start_with_windows = self.autostart_pending;
             let _ = cfg.save();
         }
 

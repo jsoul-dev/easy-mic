@@ -247,6 +247,122 @@ pub fn get_hotkey_name(mask: u64) -> String {
     }
 }
 
+pub fn parse_hotkey(s: &str) -> u64 {
+    let s = s.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("None") {
+        return 0;
+    }
+
+    // Hex number check: e.g. 0x5A08
+    if let Some(stripped) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        if let Ok(val) = u64::from_str_radix(stripped, 16) {
+            return val;
+        }
+    }
+
+    // Decimal number check
+    if let Ok(val) = s.parse::<u64>() {
+        return val;
+    }
+
+    // Key combination, e.g. "SHIFT + Z" or "CTRL + ALT + M"
+    let parts: Vec<&str> = s
+        .split(['+', '-', ','])
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    let mut modifier_byte: u8 = 0;
+    let mut key_bytes: Vec<u8> = Vec::new();
+
+    for part in parts {
+        let upper = part.to_ascii_uppercase();
+        match upper.as_str() {
+            "CTRL" | "CONTROL" | "LCTRL" | "LCONTROL" => modifier_byte |= MOD_LCTRL,
+            "RCTRL" | "RCONTROL" => modifier_byte |= MOD_RCTRL,
+            "SHIFT" | "LSHIFT" => modifier_byte |= MOD_LSHIFT,
+            "RSHIFT" => modifier_byte |= MOD_RSHIFT,
+            "ALT" | "LALT" | "MENU" | "LMENU" => modifier_byte |= MOD_LALT,
+            "RALT" | "RMENU" => modifier_byte |= MOD_RALT,
+            _ => {
+                let mut matched_vk = None;
+
+                // Check hex byte like "0x5A"
+                if let Some(stripped) = upper.strip_prefix("0X") {
+                    if let Ok(val) = u8::from_str_radix(stripped, 16) {
+                        matched_vk = Some(val);
+                    }
+                }
+
+                // Check single character
+                if matched_vk.is_none() && upper.len() == 1 {
+                    let ch = upper.chars().next().unwrap();
+                    if ch.is_ascii_uppercase() || ch.is_ascii_digit() {
+                        matched_vk = Some(ch as u8);
+                    }
+                }
+
+                // Check table matches
+                if matched_vk.is_none() {
+                    for vk in 1u8..=255 {
+                        if let Some(vk_name) = get_vk_name(vk) {
+                            if vk_name.eq_ignore_ascii_case(&upper) {
+                                matched_vk = Some(vk);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Common aliases
+                if matched_vk.is_none() {
+                    matched_vk = match upper.as_str() {
+                        "ESC" | "ESCAPE" => Some(VK_ESCAPE.0 as u8),
+                        "ENTER" | "RETURN" => Some(VK_RETURN.0 as u8),
+                        "SPACE" | "SPACEBAR" => Some(VK_SPACE.0 as u8),
+                        "TAB" => Some(VK_TAB.0 as u8),
+                        "BACK" | "BACKSPACE" => Some(VK_BACK.0 as u8),
+                        "DEL" | "DELETE" => Some(VK_DELETE.0 as u8),
+                        "INS" | "INSERT" => Some(VK_INSERT.0 as u8),
+                        "HOME" => Some(VK_HOME.0 as u8),
+                        "END" => Some(VK_END.0 as u8),
+                        "PGUP" | "PAGEUP" => Some(VK_PRIOR.0 as u8),
+                        "PGDN" | "PAGEDOWN" => Some(VK_NEXT.0 as u8),
+                        "LEFT" => Some(VK_LEFT.0 as u8),
+                        "RIGHT" => Some(VK_RIGHT.0 as u8),
+                        "UP" => Some(VK_UP.0 as u8),
+                        "DOWN" => Some(VK_DOWN.0 as u8),
+                        "LBUTTON" | "MOUSE1" | "MOUSELEFT" => Some(VK_LBUTTON.0 as u8),
+                        "RBUTTON" | "MOUSE2" | "MOUSERIGHT" => Some(VK_RBUTTON.0 as u8),
+                        "MBUTTON" | "MOUSE3" | "MOUSEMIDDLE" => Some(VK_MBUTTON.0 as u8),
+                        "XBUTTON1" | "MOUSE4" | "MOUSEX1" => Some(VK_XBUTTON1.0 as u8),
+                        "XBUTTON2" | "MOUSE5" | "MOUSEX2" => Some(VK_XBUTTON2.0 as u8),
+                        _ => None,
+                    };
+                }
+
+                if let Some(vk) = matched_vk {
+                    key_bytes.push(vk);
+                }
+            }
+        }
+    }
+
+    if key_bytes.is_empty() && modifier_byte == 0 {
+        return 0;
+    }
+
+    // Because GetHotkeyName inserts key bytes in reverse order when formatting,
+    // reversing our parsed keys preserves exact round-trip order for multi-key sequences.
+    key_bytes.reverse();
+
+    let mut mask = modifier_byte as u64;
+    for (i, &vk) in key_bytes.iter().take(7).enumerate() {
+        mask |= (vk as u64) << ((i + 1) * 8);
+    }
+    mask
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +373,10 @@ mod tests {
         let mask = (0x5Au64 << 8) | (MOD_LSHIFT as u64);
         let name = get_hotkey_name(mask);
         assert_eq!(name, "SHIFT + Z");
+        assert_eq!(parse_hotkey(&name), mask);
+        assert_eq!(parse_hotkey("shift+z"), mask);
+        assert_eq!(parse_hotkey("SHIFT + Z"), mask);
+        assert_eq!(parse_hotkey("0x5A08"), mask);
     }
 
     #[test]
@@ -266,5 +386,22 @@ mod tests {
 
         let keyboard_mask = (0x5Au64 << 8) | (MOD_LSHIFT as u64); // Shift + Z
         assert!(!mask_contains_mouse_button(keyboard_mask));
+    }
+
+    #[test]
+    fn test_parse_hotkey_roundtrips() {
+        let mouse_x1_mask = (VK_XBUTTON1.0 as u64) << 8;
+        let name = get_hotkey_name(mouse_x1_mask);
+        assert_eq!(name, "MouseX1");
+        assert_eq!(parse_hotkey("MouseX1"), mouse_x1_mask);
+        assert_eq!(parse_hotkey("mousex1"), mouse_x1_mask);
+
+        let multi = parse_hotkey("CTRL + ALT + Delete");
+        assert_ne!(multi, 0);
+        let multi_name = get_hotkey_name(multi);
+        assert!(multi_name.contains("CTRL"));
+        assert!(multi_name.contains("ALT"));
+        assert!(multi_name.contains("Delete"));
+        assert_eq!(parse_hotkey(&multi_name), multi);
     }
 }
