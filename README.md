@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/language-Rust_2021-DEA584?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?style=flat-square&logo=windows)](https://microsoft.com/windows)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE.txt)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Fork](https://img.shields.io/badge/fork_of-k1tbyte%2Feasymic-orange?style=flat-square&logo=github)](https://github.com/k1tbyte/easymic)
 [![Release](https://img.shields.io/github/v/release/jsoul-dev/easy-mic?style=flat-square)](https://github.com/jsoul-dev/easy-mic/releases)
 
@@ -122,4 +122,4 @@ cargo test --release
 
 ## License
 
-This project is licensed under the **Apache-2.0 License** — see the [LICENSE.txt](LICENSE.txt) file for details.
+This project is licensed under the **Apache-2.0 License** — see the [LICENSE](LICENSE) file for details.

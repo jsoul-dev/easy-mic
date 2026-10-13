@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["jsoul-dev"]
 description = "Lightweight global microphone controller for Windows (Rust rewrite fork of k1tbyte easymic)"
 repository = "https://github.com/jsoul-dev/easy-mic"
+license = "Apache-2.0"
 
 [[bin]]
 name = "Easy-Mic"
