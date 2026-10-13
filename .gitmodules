@@ -1,3 +1,0 @@
-[submodule "vendor/glaze"]
-	path = vendor/glaze
-	url = https://github.com/stephenberry/glaze

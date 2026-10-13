@@ -3,12 +3,14 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=../src/Resources/app.manifest");
-    println!("cargo:rerun-if-changed=../src/Resources/appicon.ico");
+    println!("cargo:rerun-if-changed=resources/app.manifest");
+    println!("cargo:rerun-if-changed=resources/appicon.ico");
 
-    let manifest_path = Path::new("../src/Resources/app.manifest")
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let manifest_path = Path::new(&manifest_dir)
+        .join("resources/app.manifest")
         .canonicalize()
-        .unwrap_or_else(|_| Path::new("..\\src\\Resources\\app.manifest").to_path_buf());
+        .unwrap_or_else(|_| Path::new(&manifest_dir).join("resources\\app.manifest"));
 
     // Try finding rc.exe from PATH or Windows Kits
     let mut rc_path = None;
@@ -40,9 +42,10 @@ fn main() {
     let mut compiled_res = false;
 
     if let Some(rc_exe) = rc_path {
-        let icon_path = Path::new("../src/Resources/appicon.ico")
+        let icon_path = Path::new(&manifest_dir)
+            .join("resources/appicon.ico")
             .canonicalize()
-            .unwrap_or_else(|_| Path::new("..\\src\\Resources\\appicon.ico").to_path_buf());
+            .unwrap_or_else(|_| Path::new(&manifest_dir).join("resources\\appicon.ico"));
 
         let rc_content = format!(
             "1 24 \"{}\"\n1 ICON \"{}\"\n",

@@ -1,28 +1,22 @@
-# Easymic
+# Easy-Mic
 
-Native WinAPI C++23 tray app: global mic control via low-level keyboard/mouse hooks.
-Priorities in order: input latency and idle footprint (this thing runs all day in the background),
-binary size, simplicity.
+Native Windows microphone indicator and push-to-talk utility rewritten in pure Rust (2021 edition) using `windows-rs`.
+Priorities in order: input latency and minimal idle footprint (runs all day in the background), binary size (~1.3MB), memory safety.
 
 ## Build
 
 ```powershell
-.\build.ps1                      # MinSizeRel -> cmake-build-minsizerel/Easymic.exe
-.\build.ps1 -Config Debug -Run
-.\build.ps1 -Clean
+cargo build --release               # Outputs to target/release/Easy-Mic.exe
+cargo test --release                # Runs unit and integration tests
+cargo run --release                 # Builds and launches Easy-Mic
 ```
 
-The script imports the MSVC environment itself (`cl.exe` is never in the global PATH).
-Toolchain: global cmake + ninja, MSVC from Visual Studio, resources via `rc.exe` from the Windows SDK.
+## Architecture & Layout
 
-`UPX not found` during a release build is only a warning - the binary is just left uncompressed
-(`winget install UPX.UPX` to enable the POST_BUILD compression step).
-
-## Layout
-
-- `src/Lib/HotkeyManager.*` - LL hooks, key masks, action dispatch. Hook procs must stay O(1):
-  actions run on the worker thread, never inside the proc.
-- `src/Audio/` - WASAPI device/session control and event handlers.
-- `src/View/`, `src/ViewModel/` - Win32 windows and their view models. Settings pages are
-  DIALOGEX resources in `src/Resources/Resource.rc`, loaded by `CreateDialogParamW`.
-- `vendor/glaze` - submodule, BEVE config serialization (`AppConfig`).
+- `easymic-rust/src/main.rs`: Entry point, logging setup, panic hook, crash reporting, message loop.
+- `easymic-rust/src/app/`: Single instance coordinator, registry startup integration, crash handler.
+- `easymic-rust/src/audio/`: WASAPI audio endpoints (`IAudioEndpointVolume`), background gain enforcement, and embedded WAV cues.
+- `easymic-rust/src/input/`: Low-level keyboard and mouse hooks, tap detection, key combination parser, and action dispatcher.
+- `easymic-rust/src/ui/`: Tray icon, DPI-aware on-screen overlay indicator, and Win32 Settings dialog.
+- `easymic-rust/src/core/`: Configuration management (`config.ini`), state representation, actions, and token interpolation.
+- `easymic-rust/resources/`: Application manifest, ICO files, and embedded WAV sound cues.

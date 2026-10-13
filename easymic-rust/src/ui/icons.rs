@@ -5,10 +5,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconFromResourceEx, DestroyIcon, HICON, LR_DEFAULTCOLOR,
 };
 
-pub const BYTES_APP_ICON: &[u8] = include_bytes!("../../../src/Resources/appicon.ico");
-pub const BYTES_MIC_MUTED: &[u8] = include_bytes!("../../../src/Resources/mic-muted.ico");
-pub const BYTES_MIC_UNMUTED: &[u8] = include_bytes!("../../../src/Resources/mic-unmuted.ico");
-pub const BYTES_MIC_ACTIVE: &[u8] = include_bytes!("../../../src/Resources/mic-active.ico");
+pub const BYTES_APP_ICON: &[u8] = include_bytes!("../../resources/appicon.ico");
+pub const BYTES_MIC_MUTED: &[u8] = include_bytes!("../../resources/mic-muted.ico");
+pub const BYTES_MIC_UNMUTED: &[u8] = include_bytes!("../../resources/mic-unmuted.ico");
+pub const BYTES_MIC_ACTIVE: &[u8] = include_bytes!("../../resources/mic-active.ico");
 
 /// Parses an ICO file buffer and creates an HICON for the requested size.
 pub fn create_hicon_from_ico_bytes(bytes: &[u8], desired_size: i32) -> Option<HICON> {
