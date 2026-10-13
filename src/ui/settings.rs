@@ -30,6 +30,7 @@ use windows::Win32::UI::Controls::Dialogs::{
 };
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, ShellExecuteW};
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const TBM_GETPOS: u32 = WM_USER;
@@ -360,16 +361,12 @@ impl SettingsWindow {
             let _ = cfg.save();
         }
 
-        // Apply autostart registry setting
-        if self.autostart_pending {
-            registry::add_to_auto_startup();
-        } else {
-            registry::remove_from_auto_startup();
-        }
+        // Apply autostart (registry or Task Scheduler) setting
+        let cfg = self.config.read();
+        registry::sync_autostart(self.autostart_pending, cfg.is_skip_uac_enabled);
         self.autostart_initial = self.autostart_pending;
 
         // Sync volume to audio device if mic volume is configured
-        let cfg = self.config.read();
         if cfg.mic_volume >= 0 {
             let _ = self.audio.set_volume_percent(cfg.mic_volume as u8);
         }
@@ -385,11 +382,10 @@ impl SettingsWindow {
         // Restore original config
         *self.config.write() = self.orig_config.clone();
         let _ = self.orig_config.save();
-        if self.orig_config.start_with_windows {
-            registry::add_to_auto_startup();
-        } else {
-            registry::remove_from_auto_startup();
-        }
+        registry::sync_autostart(
+            self.orig_config.start_with_windows,
+            self.orig_config.is_skip_uac_enabled,
+        );
         self.hooks.update_bindings();
         self.indicator.render();
     }
@@ -702,6 +698,7 @@ fn build_general_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             WPARAM(if cfg.is_skip_uac_enabled { 1 } else { 0 }),
             LPARAM(0),
         );
+        let _ = EnableWindow(h_uac, win.autostart_initial);
 
         // Automatic updates
         let h_upd = CreateWindowExW(
@@ -2160,6 +2157,10 @@ fn handle_settings_command(
         }
         IDC_CHK_AUTOSTART => {
             win.autostart_pending = !win.autostart_pending;
+            let h_uac = unsafe { get_ctrl(win.tab_panels[0], IDC_CHK_SKIP_UAC) };
+            unsafe {
+                let _ = EnableWindow(h_uac, win.autostart_pending);
+            }
         }
         IDC_CHK_SKIP_UAC => {
             let mut cfg = win.config.write();
@@ -2328,7 +2329,11 @@ fn handle_settings_command(
             }
         }
         IDC_BTN_OPEN_FOLDER => {
-            let dir = AppConfig::get_exe_dir();
+            let config_path = AppConfig::get_config_path();
+            let dir = config_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(AppConfig::get_exe_dir);
             let dir_str = dir.to_string_lossy().to_string();
             let dir_wide: Vec<u16> = dir_str.encode_utf16().chain(std::iter::once(0)).collect();
             unsafe {

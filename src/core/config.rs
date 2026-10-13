@@ -845,24 +845,107 @@ impl AppConfig {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 
-    /// Resolves primary configuration file path relative to current executable.
-    /// Prioritizes config.ini beside the executable.
+    /// Returns the user APPDATA configuration directory for Easy-Mic: %APPDATA%\Easy-Mic
+    pub fn get_appdata_dir() -> Option<PathBuf> {
+        std::env::var_os("APPDATA").map(|appdata| PathBuf::from(appdata).join("Easy-Mic"))
+    }
+
+    /// Returns the %APPDATA%\Easy-Mic\config.ini path if APPDATA is available.
+    pub fn get_appdata_config_path() -> Option<PathBuf> {
+        Self::get_appdata_dir().map(|d| d.join("config.ini"))
+    }
+
+    /// Tests if a file or directory path is writable by the current process.
+    pub fn is_path_writable(path: &Path) -> bool {
+        if path.exists() {
+            if path.is_dir() {
+                let test_file = path.join(format!(".write_test_{}", std::process::id()));
+                match fs::write(&test_file, b"") {
+                    Ok(_) => {
+                        let _ = fs::remove_file(&test_file);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            } else {
+                fs::OpenOptions::new().write(true).open(path).is_ok()
+            }
+        } else if let Some(parent) = path.parent() {
+            if parent.exists() {
+                let test_file = parent.join(format!(".write_test_{}", std::process::id()));
+                match fs::write(&test_file, b"") {
+                    Ok(_) => {
+                        let _ = fs::remove_file(&test_file);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            } else {
+                match fs::create_dir_all(parent) {
+                    Ok(_) => {
+                        let test_file = parent.join(format!(".write_test_{}", std::process::id()));
+                        match fs::write(&test_file, b"") {
+                            Ok(_) => {
+                                let _ = fs::remove_file(&test_file);
+                                true
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    Err(_) => false,
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Resolves primary configuration file path.
+    /// Priority:
+    /// 1. Portable config.ini beside the executable IF it exists and is writable.
+    /// 2. If running from a write-protected directory (e.g. C:\Program Files\Easy-Mic):
+    ///    uses %APPDATA%\Easy-Mic\config.ini.
+    /// 3. Default portable config.ini beside the executable if the executable directory is writable.
     pub fn get_config_path() -> PathBuf {
         let exe_dir = Self::get_exe_dir();
+        let candidate_config_ini = exe_dir.join("config.ini");
 
         // 1. Next to current executable: config.ini
-        let candidate_config_ini = exe_dir.join("config.ini");
         if candidate_config_ini.exists() {
+            if Self::is_path_writable(&candidate_config_ini) {
+                return candidate_config_ini;
+            }
+            // If beside exe exists but is NOT writable (e.g. in Program Files without admin):
+            if let Some(appdata_ini) = Self::get_appdata_config_path() {
+                return appdata_ini;
+            }
             return candidate_config_ini;
         }
 
-        // 2. Compatibility fallback: conf.ini
+        // 2. If %APPDATA%\Easy-Mic\config.ini already exists:
+        if let Some(appdata_ini) = Self::get_appdata_config_path() {
+            if appdata_ini.exists() {
+                return appdata_ini;
+            }
+        }
+
+        // 3. If neither exists, check if exe directory is writable (portable mode)
+        if Self::is_path_writable(&candidate_config_ini) {
+            return candidate_config_ini;
+        }
+
+        // 4. If exe directory is write-protected (e.g. C:\Program Files), use %APPDATA%
+        if let Some(appdata_ini) = Self::get_appdata_config_path() {
+            return appdata_ini;
+        }
+
+        // 5. Compatibility fallback: conf.ini
         let candidate_conf_ini = exe_dir.join("conf.ini");
         if candidate_conf_ini.exists() {
             return candidate_conf_ini;
         }
 
-        // 3. User-dropped legacy config files (easy-mic.d, easymic.d, conf.d, conf.b, conf.json)
+        // 6. User-dropped legacy config files (easy-mic.d, easymic.d, conf.d, conf.b, conf.json)
         for d_name in ["easy-mic.d", "Easy-Mic.d", "easymic.d"] {
             let candidate_d = exe_dir.join(d_name);
             if candidate_d.exists() {
@@ -887,15 +970,14 @@ impl AppConfig {
             return candidate_json;
         }
 
-        // Default ALWAYS beside the executable: config.ini
+        // Default: candidate_config_ini
         candidate_config_ini
     }
 
     /// Loads configuration from disk, falling back to default.
-    /// Ensures config.ini is created beside the executable immediately.
+    /// Ensures config.ini is created immediately (beside exe or in %APPDATA%).
     pub fn load() -> Self {
         let exe_dir = Self::get_exe_dir();
-        let target_ini = exe_dir.join("config.ini");
 
         // Clean up compiler artifact if present (rustc emits .d dep-info on build)
         for d_name in ["easy-mic.d", "Easy-Mic.d", "easymic.d"] {
@@ -909,13 +991,16 @@ impl AppConfig {
             }
         }
 
+        let target_ini = Self::get_config_path();
+
         if target_ini.exists() {
             return Self::load_from_path(&target_ini);
         }
 
-        let path = Self::get_config_path();
-        let cfg = if path.exists() {
-            Self::load_from_path(&path)
+        // If target doesn't exist, check candidate beside exe or legacy imports
+        let candidate_exe_ini = exe_dir.join("config.ini");
+        let cfg = if candidate_exe_ini.exists() {
+            Self::load_from_path(&candidate_exe_ini)
         } else {
             // Check legacy ProgramFiles import once if present
             let mut imported = None;
@@ -930,7 +1015,10 @@ impl AppConfig {
             imported.unwrap_or_default()
         };
 
-        // Always create config.ini beside the executable immediately
+        // Ensure parent directory exists (e.g. %APPDATA%\Easy-Mic) and create initial config.ini
+        if let Some(parent) = target_ini.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
         let _ = cfg.save_to_path(&target_ini);
         cfg
     }
@@ -1003,9 +1091,9 @@ impl AppConfig {
         }
     }
 
-    /// Saves configuration to disk beside the executable (config.ini).
+    /// Saves configuration to the active configuration path (beside exe or %APPDATA%).
     pub fn save(&self) -> Result<(), std::io::Error> {
-        let target_path = Self::get_exe_dir().join("config.ini");
+        let target_path = Self::get_config_path();
         self.save_to_path(&target_path)
     }
 
@@ -1024,15 +1112,41 @@ impl AppConfig {
             path.to_path_buf()
         };
 
-        if target_path.extension().and_then(|e| e.to_str()) == Some("json") {
-            let json = serde_json::to_string_pretty(self)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            fs::write(&target_path, json)?;
-        } else {
-            let ini = self.to_ini();
-            fs::write(&target_path, ini)?;
+        if let Some(parent) = target_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
 
+        let result = if target_path.extension().and_then(|e| e.to_str()) == Some("json") {
+            let json = serde_json::to_string_pretty(self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            fs::write(&target_path, json)
+        } else {
+            let ini = self.to_ini();
+            fs::write(&target_path, ini)
+        };
+
+        if let Err(ref e) = result {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                if let Some(appdata_ini) = Self::get_appdata_config_path() {
+                    if appdata_ini != target_path {
+                        if let Some(parent) = appdata_ini.parent() {
+                            let _ = fs::create_dir_all(parent);
+                        }
+                        let ini = self.to_ini();
+                        if fs::write(&appdata_ini, ini).is_ok() {
+                            log::info!(
+                                "Permission denied writing to {:?}; saved fallback to {:?}",
+                                target_path,
+                                appdata_ini
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        result?;
         log::info!("Saved configuration to {:?}", target_path);
         Ok(())
     }
@@ -1273,6 +1387,25 @@ mod tests {
         assert!(migrated_ini.exists());
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_is_path_writable() {
+        let temp_dir = std::env::temp_dir().join("easymic_test_writable");
+        let _ = fs::create_dir_all(&temp_dir);
+        let test_ini = temp_dir.join("config.ini");
+        assert!(AppConfig::is_path_writable(&test_ini));
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_appdata_path_resolution() {
+        if std::env::var_os("APPDATA").is_some() {
+            assert!(AppConfig::get_appdata_dir().is_some());
+            assert!(AppConfig::get_appdata_config_path().is_some());
+            let appdata_ini = AppConfig::get_appdata_config_path().unwrap();
+            assert!(appdata_ini.ends_with(Path::new("Easy-Mic").join("config.ini")));
+        }
     }
 }
 
