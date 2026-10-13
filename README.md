@@ -1,4 +1,4 @@
-# Easy-Mic 🎙️
+# Easy-Mic
 
 [![Rust](https://img.shields.io/badge/language-Rust_2021-DEA584?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?style=flat-square&logo=windows)](https://microsoft.com/windows)
@@ -14,14 +14,14 @@
 
 ---
 
-## ✨ Features
+## Features
 
-### 🎤 Universal Microphone Management
+### Universal Microphone Management
 - **Hardware-Level Mute Synchronisation**: Communicates directly with Windows Core Audio COM endpoints (`IAudioEndpointVolume`). If another application or physical button toggles your mic, Easy-Mic reflects and maintains the authoritative state in real time.
 - **Persistent Volume Enforcement**: Optional background volume keeper locks your hardware microphone gain at your configured level (e.g. 100%) against background apps that automatically adjust sensitivity.
 - **Periodic Endpoint Reconciliation**: A non-intrusive 30-second background worker ensures device state integrity even across USB headset disconnects and sleep/wake cycles.
 
-### ⌨️ Low-Overhead Global Hotkeys
+### Low-Overhead Global Hotkeys
 - **Dedicated Input Subsystem**: Processes keyboard and mouse input on an isolated low-level hook thread, dispatching actions in sub-millisecond time without introducing input lag to games or apps.
 - **Flexible Action Triggers**:
   - **Toggle Mute** — Instant one-touch state toggle (default: `Shift + Z`)
@@ -29,7 +29,7 @@
   - **Multi-Press & Tap-Only** — Distinguish single, double, or triple taps, with modifiers that double as standard keys
   - **Custom Shell Commands** — Launch scripts or applications directly from hotkey events
 
-### 📊 On-Screen Visual Indicator
+### On-Screen Visual Indicator
 - **State Overlay**: Floating status pill rendered over full-screen applications with zero flicker:
   - `Hidden` — No indicator overlay
   - `Muted` — Appears only when microphone is muted
@@ -40,19 +40,19 @@
   - Interactive drag-and-drop repositioning while the Settings dialog is open
   - **Exclude from Capture**: Hides the overlay from OBS Studio, Discord screen share, and Windows Game Bar
 
-### 🔔 Crisp Audio Feedback
+### Crisp Audio Feedback
 - **Embedded Audio Presets**: High-fidelity sound cues embedded directly within `Easy-Mic.exe` (no loose sound files required):
   - `Off`, `On`, `Mute`, `Unmute`, `Disable`, `Enable`, and `None`
 - **Custom Sound Support**: Full support for personal `.wav` audio files with long-path hover tooltips in the settings interface.
 - **Independent Volume Control**: Action and feedback sounds feature dedicated volume adjustment separate from master output.
 
-### ⚙️ Human-Readable Configuration (`config.ini`)
+### Human-Readable Configuration (`config.ini`)
 - **Clean Standard INI**: No opaque binary blobs. Stored beside `Easy-Mic.exe` with structured sections: `[General]`, `[Indicator]`, `[Sounds]`, and `[Action.N]`.
 - **Legacy Migration Support**: Seamlessly recognizes and imports legacy `conf.b` (Glaze BEVE binary) and `easymic.d` from original versions of EasyMic, migrating settings into `config.ini` automatically.
 
 ---
 
-## ⚡ Rust Architecture vs. Legacy C++
+## Rust Architecture vs. Legacy C++
 
 | Feature | Legacy C++ Version | Easy-Mic (Native Rust) |
 | :--- | :--- | :--- |
@@ -66,7 +66,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Download
 Grab the latest release from the [Releases](https://github.com/jsoul-dev/easy-mic/releases) page:
@@ -84,7 +84,7 @@ Easy-Mic will appear in your **System Tray** (near the clock).
 
 ---
 
-## 📝 Configuration Reference (`config.ini`)
+## Configuration Reference (`config.ini`)
 
 ```ini
 [General]
@@ -135,7 +135,7 @@ Args =
 
 ---
 
-## 🛠️ Building from Source
+## Building from Source
 
 ### Prerequisites
 - **Windows 10 / 11**
@@ -166,13 +166,13 @@ cargo test --release
 
 ---
 
-## 📜 Credits & Acknowledgments
+## Credits & Acknowledgments
 
 * **Original Author**: [k1tbyte](https://github.com/k1tbyte) for the original [Easymic](https://github.com/k1tbyte/easymic) concept, icon designs, and audio assets.
 * **Rust Rewrite & Rebranding**: [jsoul-dev](https://github.com/jsoul-dev) & the Antigravity Team for the ground-up Rust architecture, Win32 COM modernization, and user experience refinements.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the **Apache-2.0 License** — see the [LICENSE.txt](LICENSE.txt) file for details.
