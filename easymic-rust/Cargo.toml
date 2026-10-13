@@ -1,9 +1,14 @@
 [package]
-name = "easymic"
+name = "easy-mic"
 version = "1.3.0"
 edition = "2021"
-authors = ["k1tbyte", "Antigravity"]
-description = "Lightweight global microphone controller for Windows"
+authors = ["k1tbyte", "jsoul-dev", "Antigravity"]
+description = "Lightweight global microphone controller for Windows (Rust rewrite fork of k1tbyte easymic)"
+repository = "https://github.com/jsoul-dev/easy-mic"
+
+[[bin]]
+name = "Easy-Mic"
+path = "src/main.rs"
 
 [dependencies]
 windows = { version = "0.58", features = [

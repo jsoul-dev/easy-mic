@@ -46,23 +46,23 @@ pub fn init_logging_and_crash_handler() {
         let backtrace = std::backtrace::Backtrace::capture();
 
         let report = format!(
-            "EasyMic Crash Report\nTime: {}\nThread: {}\nLocation: {}\nError: {}\n\nBacktrace:\n{:?}",
+            "Easy-Mic Crash Report\nTime: {}\nThread: {}\nLocation: {}\nError: {}\n\nBacktrace:\n{:?}",
             now, thread_name, location, payload, backtrace
         );
 
         log::error!("CRASH:\n{}", report);
 
-        // Save to easymic_crash.log
+        // Save to easy-mic_crash.log
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                let crash_file = dir.join("easymic_crash.log");
+                let crash_file = dir.join("easy-mic_crash.log");
                 let _ = std::fs::write(&crash_file, &report);
             }
         }
 
         // Show native message box
         let message_wide: Vec<u16> = format!(
-            "EasyMic encountered an unexpected error and must terminate:\n\n{}\n\nDetails saved to easymic_crash.log",
+            "Easy-Mic encountered an unexpected error and must terminate:\n\n{}\n\nDetails saved to easy-mic_crash.log",
             payload
         )
         .encode_utf16()
@@ -73,7 +73,7 @@ pub fn init_logging_and_crash_handler() {
             let _ = MessageBoxW(
                 None,
                 windows::core::PCWSTR(message_wide.as_ptr()),
-                w!("EasyMic Crash"),
+                w!("Easy-Mic Crash"),
                 MB_OK | MB_ICONERROR,
             );
         }

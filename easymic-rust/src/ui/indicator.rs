@@ -44,7 +44,7 @@ impl IndicatorWindow {
         config: Arc<RwLock<AppConfig>>,
         icons: Arc<AppIcons>,
     ) -> Result<Arc<Self>, windows::core::Error> {
-        let class_name = w!("EasyMicIndicatorWindow");
+        let class_name = w!("Easy-MicIndicatorWindow");
 
         unsafe {
             let wc = WNDCLASSEXW {
@@ -65,7 +65,7 @@ impl IndicatorWindow {
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
                 class_name,
-                w!("EasyMic Indicator"),
+                w!("Easy-Mic Indicator"),
                 WS_POPUP | WS_DISABLED,
                 init_x,
                 init_y,

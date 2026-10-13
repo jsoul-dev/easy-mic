@@ -411,7 +411,7 @@ impl AppConfig {
             "; =============================================================================="
         )
         .unwrap();
-        writeln!(out, "; EasyMic Configuration File (config.ini)").unwrap();
+        writeln!(out, "; Easy-Mic Configuration File (config.ini)").unwrap();
         writeln!(
             out,
             "; =============================================================================="
@@ -422,7 +422,7 @@ impl AppConfig {
         writeln!(out, "[General]").unwrap();
         writeln!(out, "; Application configuration format version").unwrap();
         writeln!(out, "Version = {}", self.version).unwrap();
-        writeln!(out, "; Launch EasyMic automatically on Windows startup").unwrap();
+        writeln!(out, "; Launch Easy-Mic automatically on Windows startup").unwrap();
         writeln!(out, "StartWithWindows = {}", self.start_with_windows).unwrap();
         writeln!(
             out,
@@ -862,14 +862,16 @@ impl AppConfig {
             return candidate_conf_ini;
         }
 
-        // 3. User-dropped legacy config files (easymic.d, conf.d, conf.b, conf.json)
-        let candidate_d = exe_dir.join("easymic.d");
-        if candidate_d.exists() {
-            let is_compiler_artifact = fs::read_to_string(&candidate_d)
-                .map(|content| content.contains("easymic.exe:") || content.contains(".rs"))
-                .unwrap_or(false);
-            if !is_compiler_artifact {
-                return candidate_d;
+        // 3. User-dropped legacy config files (easy-mic.d, easymic.d, conf.d, conf.b, conf.json)
+        for d_name in ["easy-mic.d", "Easy-Mic.d", "easymic.d"] {
+            let candidate_d = exe_dir.join(d_name);
+            if candidate_d.exists() {
+                let is_compiler_artifact = fs::read_to_string(&candidate_d)
+                    .map(|content| content.contains(".exe:") || content.contains(".rs"))
+                    .unwrap_or(false);
+                if !is_compiler_artifact {
+                    return candidate_d;
+                }
             }
         }
         let candidate_conf_d = exe_dir.join("conf.d");
@@ -895,12 +897,14 @@ impl AppConfig {
         let exe_dir = Self::get_exe_dir();
         let target_ini = exe_dir.join("config.ini");
 
-        // Clean up compiler artifact if present (rustc emits easymic.d dep-info on build)
-        let candidate_d = exe_dir.join("easymic.d");
-        if candidate_d.exists() {
-            if let Ok(content) = fs::read_to_string(&candidate_d) {
-                if content.contains("easymic.exe:") || content.contains(".rs") {
-                    let _ = fs::remove_file(&candidate_d);
+        // Clean up compiler artifact if present (rustc emits .d dep-info on build)
+        for d_name in ["easy-mic.d", "Easy-Mic.d", "easymic.d"] {
+            let candidate_d = exe_dir.join(d_name);
+            if candidate_d.exists() {
+                if let Ok(content) = fs::read_to_string(&candidate_d) {
+                    if content.contains(".exe:") || content.contains(".rs") {
+                        let _ = fs::remove_file(&candidate_d);
+                    }
                 }
             }
         }
@@ -1011,6 +1015,7 @@ impl AppConfig {
         let file_name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
         let target_path = if ext.eq_ignore_ascii_case("b")
             || ext.eq_ignore_ascii_case("d")
+            || file_name.eq_ignore_ascii_case("easy-mic.d")
             || file_name.eq_ignore_ascii_case("easymic.d")
             || file_name.eq_ignore_ascii_case("conf.d")
         {
@@ -1133,6 +1138,8 @@ mod tests {
                 || path.ends_with("conf.ini")
                 || path.ends_with("conf.b")
                 || path.ends_with("conf.json")
+                || path.ends_with("easy-mic.d")
+                || path.ends_with("Easy-Mic.d")
                 || path.ends_with("easymic.d")
                 || path.ends_with("conf.d")
         );
@@ -1246,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_non_config_text_rejected_by_parse_ini() {
-        let fake_dep_info = "C:\\projects\\easymic.exe: C:\\projects\\src\\main.rs C:\\projects\\build.rs\n";
+        let fake_dep_info = "C:\\projects\\Easy-Mic.exe: C:\\projects\\src\\main.rs C:\\projects\\build.rs\n";
         assert!(AppConfig::parse_ini(fake_dep_info).is_none());
     }
 

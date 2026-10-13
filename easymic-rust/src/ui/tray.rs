@@ -75,9 +75,9 @@ impl TrayIcon {
         let vol = self.state.volume_percent();
 
         let tip = if has_device {
-            format!("Easymic - {} [{}%]", name, vol)
+            format!("Easy-Mic - {} [{}%]", name, vol)
         } else {
-            "Easymic - No device".to_string()
+            "Easy-Mic - No device".to_string()
         };
 
         let mut wide: Vec<u16> = tip.encode_utf16().collect();

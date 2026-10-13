@@ -108,7 +108,7 @@ impl AppLifecycle {
         // Use an unowned top-level hidden tool window with WS_POPUP instead of HWND_MESSAGE
         // because message-only windows cannot become foreground windows, which breaks
         // TrackPopupMenu focus and dismiss handshakes with Windows Explorer (KB135788).
-        let class_name = w!("EasyMicCoordinatorWindow");
+        let class_name = w!("Easy-MicCoordinatorWindow");
         let main_hwnd = unsafe {
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -122,7 +122,7 @@ impl AppLifecycle {
             CreateWindowExW(
                 WS_EX_TOOLWINDOW,
                 class_name,
-                w!("EasyMicCoordinator"),
+                w!("Easy-MicCoordinator"),
                 WS_POPUP | WS_VISIBLE,
                 0,
                 0,
@@ -172,7 +172,7 @@ impl AppLifecycle {
 
         *COORDINATOR.lock() = Some(lifecycle.clone());
 
-        log::info!("EasyMic lifecycle initialized successfully");
+        log::info!("Easy-Mic lifecycle initialized successfully");
         Ok(lifecycle)
     }
 
@@ -190,7 +190,7 @@ impl AppLifecycle {
     }
 
     pub fn shutdown(&self) {
-        log::info!("Shutting down EasyMic");
+        log::info!("Shutting down Easy-Mic");
         if let Some(ref r) = self.reconciliation {
             r.stop();
         }

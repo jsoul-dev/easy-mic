@@ -8,7 +8,8 @@ use windows::Win32::System::Registry::{
 };
 
 const AUTOSTART_SUBKEY: PCWSTR = w!(r#"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"#);
-pub const APP_NAME_W: PCWSTR = w!("Easymic");
+pub const APP_NAME_W: PCWSTR = w!("Easy-Mic");
+pub const LEGACY_APP_NAME_W: PCWSTR = w!("Easymic");
 
 pub fn is_in_auto_startup() -> bool {
     unsafe {
@@ -35,6 +36,9 @@ pub fn add_to_auto_startup() -> bool {
         let slice = &path_buf[..=(len as usize)];
         let byte_len = std::mem::size_of_val(slice) as u32;
 
+        // Clean legacy key if present
+        let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, LEGACY_APP_NAME_W);
+
         RegSetKeyValueW(
             HKEY_CURRENT_USER,
             AUTOSTART_SUBKEY,
@@ -47,5 +51,8 @@ pub fn add_to_auto_startup() -> bool {
 }
 
 pub fn remove_from_auto_startup() -> bool {
-    unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, APP_NAME_W) == ERROR_SUCCESS }
+    unsafe {
+        let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, LEGACY_APP_NAME_W);
+        RegDeleteKeyValueW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, APP_NAME_W) == ERROR_SUCCESS
+    }
 }

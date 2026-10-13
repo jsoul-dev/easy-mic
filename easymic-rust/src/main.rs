@@ -18,14 +18,14 @@ use windows::Win32::UI::Controls::{
 fn main() {
     // 1. Initialize crash logging and panic hook
     init_logging_and_crash_handler();
-    log::info!("EasyMic Rust starting up");
+    log::info!("Easy-Mic Rust starting up");
 
     // 2. Enforce single instance via named Win32 Mutex
     let _instance_guard = match SingleInstanceGuard::acquire() {
         Some(guard) => guard,
         None => {
             log::info!(
-                "Another instance of EasyMic is already active. Terminating duplicate process."
+                "Another instance of Easy-Mic is already active. Terminating duplicate process."
             );
             return;
         }
@@ -53,7 +53,7 @@ fn main() {
         }
         Err(err) => {
             log::error!(
-                "Fatal error during EasyMic lifecycle initialization: {:?}",
+                "Fatal error during Easy-Mic lifecycle initialization: {:?}",
                 err
             );
         }
@@ -64,5 +64,5 @@ fn main() {
         CoUninitialize();
     }
 
-    log::info!("EasyMic terminated cleanly");
+    log::info!("Easy-Mic terminated cleanly");
 }

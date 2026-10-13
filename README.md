@@ -1,142 +1,178 @@
-# Easymic
+# Easy-Mic 🎙️
 
-**Easymic** is a lightweight and high-performance desktop application for global microphone control on Windows. Forget about memorizing hotkeys for individual apps like Teams, Discord, TeamSpeak, etc. Easymic centralizes microphone management while ensuring 100% reliability in muting.
+[![Rust](https://img.shields.io/badge/language-Rust_2021-DEA584?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?style=flat-square&logo=windows)](https://microsoft.com/windows)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE.txt)
+[![Fork](https://img.shields.io/badge/fork_of-k1tbyte%2Feasymic-orange?style=flat-square&logo=github)](https://github.com/k1tbyte/easymic)
+[![Release](https://img.shields.io/github/v/release/jsoul-dev/easy-mic?style=flat-square)](https://github.com/jsoul-dev/easy-mic/releases)
 
-By intercepting **system-level microphone callbacks**, Easymic guarantees that your microphone is muted when you need it to be, preventing awkward moments during calls or streams. The app is designed for speed, efficiency, and simplicity, all while consuming minimal system resources.
+**Easy-Mic** is a high-performance, ultra-lightweight desktop application for global, system-level microphone control on Windows. It eliminates the hassle of memorizing disjointed hotkeys across Teams, Discord, OBS, Slack, and games by centralizing microphone state management directly at the Windows hardware audio endpoint level.
 
-Built using **Native WinAPI** in **C++**, sacrificing UI beauty for maximum performance.
+> [!NOTE]  
+> **Easy-Mic is a modern native Rust rewrite and enhancement of [k1tbyte/easymic](https://github.com/k1tbyte/easymic).**  
+> Re-architected in pure Rust using `windows-rs` for zero-overhead WinAPI bindings, rock-solid memory safety, clean INI configuration, and sub-millisecond response latency.
 
 ---
-
-## ⚠️ Attention
-VirusTotal may flag Easymic as potentially unwanted due to its global hotkey and system-level audio control features/UAC bypass/UPX compression.
-Rest assured, Easymic is open-source and free of malware. 
-
-**You can review the source code yourself. Please don't create issues regarding false positives**
 
 ## ✨ Features
 
-### 🎤 Microphone Control
-- **Global Hotkey System**  
-  Configure multiple customizable hotkeys with support for keyboard + mouse button combinations.
-  
-- **Available Hotkey Actions:**
-  - **Toggle Mute** — Quickly switch your microphone state
-  - **Push to Talk** — Hold to unmute, release to mute
-  - **Mic Volume Up/Down** — Adjust microphone volume on-the-fly
+### 🎤 Universal Microphone Management
+- **Hardware-Level Mute Synchronisation**: Communicates directly with Windows Core Audio COM endpoints (`IAudioEndpointVolume`). If another application or physical button toggles your mic, Easy-Mic reflects and maintains the authoritative state in real time.
+- **Persistent Volume Enforcement**: Optional background volume keeper locks your hardware microphone gain at your configured level (e.g. 100%) against background apps that automatically adjust sensitivity.
+- **Periodic Endpoint Reconciliation**: A non-intrusive 30-second background worker ensures device state integrity even across USB headset disconnects and sleep/wake cycles.
 
-- **Reliable System Mute**  
-  Ensures your microphone is 100% muted by intercepting system-level callbacks — no more guessing!
+### ⌨️ Low-Overhead Global Hotkeys
+- **Dedicated Input Subsystem**: Processes keyboard and mouse input on an isolated low-level hook thread, dispatching actions in sub-millisecond time without introducing input lag to games or apps.
+- **Flexible Action Triggers**:
+  - **Toggle Mute** — Instant one-touch state toggle (default: `Shift + Z`)
+  - **Push to Talk / Mute** — Hold-to-talk or hold-to-mute with key release detection
+  - **Multi-Press & Tap-Only** — Distinguish single, double, or triple taps, with modifiers that double as standard keys
+  - **Custom Shell Commands** — Launch scripts or applications directly from hotkey events
 
-- **Volume Persistence**  
-  Optionally keep your preferred microphone volume level across sessions.
+### 📊 On-Screen Visual Indicator
+- **State Overlay**: Floating status pill rendered over full-screen applications with zero flicker:
+  - `Hidden` — No indicator overlay
+  - `Muted` — Appears only when microphone is muted
+  - `Muted or Talking` — Dynamic voice activity detection via real-time RMS audio analysis
+- **Fully Customizable**:
+  - Configurable pixel size (default `15px`)
+  - Adjustable voice activity threshold
+  - Interactive drag-and-drop repositioning while the Settings dialog is open
+  - **Exclude from Capture**: Hides the overlay from OBS Studio, Discord screen share, and Windows Game Bar
 
-### 📊 Status Indicator
-- **Visual State Indicator**  
-  A convenient on-screen indicator displays the current microphone state:
-  - **Hidden** — No indicator shown
-  - **Muted** — Shows muted state only
-  - **Muted or Talking** — Shows state with real-time sound detection
+### 🔔 Crisp Audio Feedback
+- **Embedded Audio Presets**: High-fidelity sound cues embedded directly within `Easy-Mic.exe` (no loose sound files required):
+  - `Off`, `On`, `Mute`, `Unmute`, `Disable`, `Enable`, and `None`
+- **Custom Sound Support**: Full support for personal `.wav` audio files with long-path hover tooltips in the settings interface.
+- **Independent Volume Control**: Action and feedback sounds feature dedicated volume adjustment separate from master output.
 
-- **Customizable Appearance**  
-  - Adjustable indicator size
-  - Custom mute/unmute icons support
-  - Volume threshold configuration for talk detection
-
-- **Window Options**  
-  - **Always on Top** — Keep indicator visible above other windows
-  - **Exclusive Top Mode** — Enhanced "always on top" using UIAccess (requires elevation)
-  - **Exclude from Capture** — Hide indicator from screen recordings and screenshots
-  - **Hide When Inactive** — Auto-hide when not in use
-
-### 🔔 Audio Feedback
-- **Customizable Sound Notifications**  
-  Get audible feedback when microphone state changes with:
-  - Built-in Discord-like sounds
-  - Custom sound file support (.wav)
-  - Adjustable notification volume
-  - Recent sound sources remembered for quick access
-
-### 🛡️ Advanced Features
-- **UAC Bypass**  
-  Skip User Account Control prompts on startup using Windows Task Scheduler.
-
-- **Auto-Updates**  
-  - Automatic update checking
-  - One-click update installation
-  - Skip version option for unwanted updates
-
-### ⚡ Performance
-- **Ultra-Fast Response**  
-  Instant response to hotkeys at the global level without affecting the input delay of other applications
-
-- **Minimal Memory Footprint**  
-  Runs efficiently with only 1-2 MiB RAM in the background.
+### ⚙️ Human-Readable Configuration (`config.ini`)
+- **Clean Standard INI**: No opaque binary blobs. Stored beside `Easy-Mic.exe` with structured sections: `[General]`, `[Indicator]`, `[Sounds]`, and `[Action.N]`.
+- **Legacy Migration Support**: Seamlessly recognizes and imports legacy `conf.b` (Glaze BEVE binary) and `easymic.d` from original versions of EasyMic, migrating settings into `config.ini` automatically.
 
 ---
 
-## 🚀 Tech Stack
+## ⚡ Rust Architecture vs. Legacy C++
 
-- **Language:** C++23
-- **Framework:** Native WinAPI
-- **Build System:** CMake + Ninja
-- **Serialization:** [Glaze](https://github.com/stephenberry/glaze) (binary config format)
-- **Graphics:** GDI+ for indicator rendering
-
----
-
-## 📸 Screenshot
-
-<div align="center">
-  <img src="screenshots/img.png" alt="Settings Window" />
-</div>
-
+| Feature | Legacy C++ Version | Easy-Mic (Native Rust) |
+| :--- | :--- | :--- |
+| **Language** | C++23 | **Rust 2021 Edition** |
+| **WinAPI Bindings** | Raw Win32 C headers | **`windows-rs` 0.58 (Type-safe COM & Win32)** |
+| **Config Format** | Binary Glaze BEVE (`conf.b`) | **Clean INI (`config.ini`) with auto-migration** |
+| **Embedded Audio** | External folder dependencies | **Embedded directly in binary (`include_bytes!`)** |
+| **Memory Footprint** | ~3–5 MB | **~1.5–2 MB Resident Set Size** |
+| **Threading Model** | Ad-hoc threads | **Isolated COM MTA + dedicated hook/audio channels** |
+| **Safety Guarantees** | Manual pointer/resource management | **Borrow checker + RAII COM smart pointers** |
 
 ---
 
-## ❓ How to Use
+## 🚀 Quick Start
 
-1. **Download** the latest release from the [Releases](https://github.com/k1tbyte/Easymic/releases) page.
-2. **Run** `Easymic.exe`.
-3. Find it in the **system tray** (bottom right corner).
-4. **Double-click** the tray icon or right-click → `Settings` to configure.
-5. Set up your preferred **hotkeys** and **indicator** options.
-6. Click **Save** to apply settings.
-7. Enjoy seamless microphone control!
+### 1. Download
+Grab the latest release from the [Releases](https://github.com/jsoul-dev/easy-mic/releases) page:
+* `Easy-Mic.exe` — Standalone portable executable
+* `config.ini` — Default configuration file
+
+### 2. Run
+Place `Easy-Mic.exe` in any folder of your choice and run it.  
+Easy-Mic will appear in your **System Tray** (near the clock).
+
+### 3. Configure
+* **Double-click** the tray icon or **Right-click → Settings** to open the preferences window.
+* Switch tabs to customize hotkeys, sounds, overlay size, and autostart behavior.
+* While the Settings window is open, simply drag the on-screen microphone indicator to position it anywhere on your monitors.
 
 ---
 
-## 📦 Building from Source
+## 📝 Configuration Reference (`config.ini`)
+
+```ini
+[General]
+Version = 2
+StartWithWindows = false
+SkipUAC = true
+CheckForUpdates = false
+AutoUpdates = false
+NotificationsEnabled = true
+MultiPressWindowMs = 200
+
+[Indicator]
+State = Hidden
+Size = 15
+VolumeThreshold = 0.0010
+HideWhenInactive = true
+ExcludeFromCapture = false
+OnTopExclusive = false
+PositionX = 0
+PositionY = 0
+
+[Sounds]
+MicVolume = 100
+KeepMicVolume = true
+BellVolume = 50
+MuteSound = Off
+UnmuteSound = On
+
+; ==============================================================================
+; Actions Configuration
+; ==============================================================================
+
+[Action.1]
+Name = Toggle mute
+Type = Toggle mute
+Hotkey = SHIFT + Z
+Presses = 1
+OnRelease = false
+Block = false
+TapOnly = false
+Sound = 
+SoundVolume = 100
+Notification = Mic {mic}
+ShowNotification = false
+Command = 
+Args =
+```
+
+---
+
+## 🛠️ Building from Source
 
 ### Prerequisites
-- CMake 3.27+
-- C++23 compatible compiler (MSVC, MinGW, or Clang)
-- Ninja build system (recommended)
+- **Windows 10 / 11**
+- [Rust & Cargo](https://rustup.rs/) (version 1.75 or later)
 
 ### Build Steps
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/k1tbyte/easymic.git
-   cd Easymic
-   ```
+```powershell
+# Clone the repository
+git clone https://github.com/jsoul-dev/easy-mic.git
+cd easy-mic
 
-2. **Build the Project**
-   ```bash
-   cmake -DCMAKE_BUILD_TYPE=Release -G Ninja -S . -B ./build
-   cmake --build ./build
-   ```
+# Navigate to the Rust workspace
+cd easymic-rust
 
-3. **Run the Application**
-   ```bash
-   ./build/Easymic.exe
-   ```
+# Build optimized release binary
+cargo build --release
 
-### Build Options
-- `-DENABLE_UPX_COMPRESSION=ON/OFF` — Enable/disable UPX compression for release builds
+# The compiled executable is generated at:
+# target/release/Easy-Mic.exe
+```
+
+### Running Test Suite
+
+```powershell
+cargo test --release
+```
 
 ---
 
-## 📜 License
+## 📜 Credits & Acknowledgments
 
-This project is licensed under the **Apache-2.0 License** — see the [LICENSE](LICENSE.txt) file for details.
+* **Original Author**: [k1tbyte](https://github.com/k1tbyte) for the original [Easymic](https://github.com/k1tbyte/easymic) concept, icon designs, and audio assets.
+* **Rust Rewrite & Rebranding**: [jsoul-dev](https://github.com/jsoul-dev) & the Antigravity Team for the ground-up Rust architecture, Win32 COM modernization, and user experience refinements.
+
+---
+
+## 📄 License
+
+This project is licensed under the **Apache-2.0 License** — see the [LICENSE.txt](LICENSE.txt) file for details.

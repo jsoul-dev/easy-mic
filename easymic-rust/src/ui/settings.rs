@@ -216,7 +216,7 @@ const IDC_ACT_BTN_SAVE: usize = 715;
 const IDC_ACT_BTN_CANCEL: usize = 716;
 
 const WM_HOTKEY_CAPTURED: u32 = WM_USER + 501;
-const REPO_URL_W: PCWSTR = w!("https://github.com/k1tbyte/Easymic");
+const REPO_URL_W: PCWSTR = w!("https://github.com/jsoul-dev/easy-mic");
 
 pub struct SettingsWindow {
     hwnd: HWND,
@@ -292,7 +292,7 @@ impl SettingsWindow {
         let state_ptr = Box::into_raw(window);
 
         unsafe {
-            let class_name = w!("EasyMicSettingsWindow");
+            let class_name = w!("Easy-MicSettingsWindow");
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(settings_wndproc),
@@ -307,7 +307,7 @@ impl SettingsWindow {
             let hwnd = CreateWindowExW(
                 WS_EX_DLGMODALFRAME | WS_EX_APPWINDOW,
                 class_name,
-                w!("EasyMic Settings"),
+                w!("Easy-Mic Settings"),
                 WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
@@ -582,7 +582,7 @@ fn init_settings_controls(hwnd: HWND, win: &mut SettingsWindow) {
         let pw = 580;
         let ph = 375;
 
-        let panel_class = w!("EasyMicTabPanel");
+        let panel_class = w!("Easy-MicTabPanel");
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(panel_wndproc),
@@ -661,7 +661,7 @@ fn build_general_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         let h_auto = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Start EasyMic automatically with Windows"),
+            w!("Start Easy-Mic automatically with Windows"),
             ws_child_vis_i(BS_AUTOCHECKBOX),
             20,
             20,
@@ -1901,7 +1901,7 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         let h_title = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("STATIC"),
-            w!("EasyMic"),
+            w!("Easy-Mic"),
             ws_child_vis_i(0),
             25,
             20,
@@ -1924,7 +1924,7 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         let h_sub = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("STATIC"),
-            w!("Version 1.3.0 (Native Rust Edition) • High-Performance Audio Manager"),
+            w!("Version 1.3.0 (Native Rust Edition) • Fork of k1tbyte/easymic"),
             ws_child_vis_i(0),
             25,
             50,
@@ -1947,7 +1947,7 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("STATIC"),
-            w!("Engineered with zero-overhead Win32 input hooks, sub-millisecond hotkey response,\nand direct hardware COM audio endpoint synchronization."),
+            w!("Rust rewrite fork of k1tbyte/easymic with zero-overhead Win32 input hooks,\nsub-millisecond hotkey response, and direct hardware COM audio endpoint synchronization."),
             ws_child_vis_i(0),
             25,
             75,
@@ -2446,7 +2446,7 @@ fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) 
     let state_ptr = Box::into_raw(state);
 
     unsafe {
-        let class_name = w!("EasyMicActionEditor");
+        let class_name = w!("Easy-MicActionEditor");
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(action_editor_wndproc),
