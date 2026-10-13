@@ -98,9 +98,6 @@ Easy-Mic will appear in your **System Tray** (near the clock).
 git clone https://github.com/jsoul-dev/easy-mic.git
 cd easy-mic
 
-# Navigate to the Rust workspace
-cd easymic-rust
-
 # Build optimized release binary
 cargo build --release
 
