@@ -516,8 +516,12 @@ impl AppConfig {
             "; =============================================================================="
         )
         .unwrap();
+        writeln!(out).unwrap();
 
         for (idx, action) in self.actions.iter().enumerate() {
+            if idx > 0 {
+                writeln!(out).unwrap();
+            }
             writeln!(out, "[Action.{}]", idx + 1).unwrap();
             writeln!(out, "Name = {}", action.name).unwrap();
             writeln!(out, "Type = {}", action.built_in).unwrap();
@@ -533,7 +537,6 @@ impl AppConfig {
             writeln!(out, "ShowNotification = {}", action.show_notification).unwrap();
             writeln!(out, "Command = {}", action.command).unwrap();
             writeln!(out, "Args = {}", action.args).unwrap();
-            writeln!(out).unwrap();
         }
 
         out
@@ -580,12 +583,21 @@ impl AppConfig {
                 if lower_sec.starts_with("action") {
                     finalize_action(&mut current_action, &mut custom_actions);
                     current_action = Some(ActionConfig::default());
+                    parsed_any = true;
                 } else {
                     finalize_action(&mut current_action, &mut custom_actions);
+                    if lower_sec == "general"
+                        || lower_sec == "indicator"
+                        || lower_sec == "sounds"
+                        || lower_sec == "audio"
+                        || lower_sec == "sound"
+                        || lower_sec == "hotkeys"
+                    {
+                        parsed_any = true;
+                    }
                 }
 
                 current_section = section_name.to_string();
-                parsed_any = true;
                 continue;
             }
 
@@ -619,10 +631,9 @@ impl AppConfig {
             let sec_lower = current_section.to_ascii_lowercase();
             let key_lower = key.to_ascii_lowercase();
 
-            parsed_any = true;
-
             if sec_lower.starts_with("action") {
                 if let Some(ref mut act) = current_action {
+                    parsed_any = true;
                     match key_lower.as_str() {
                         "name" => act.name = val.to_string(),
                         "type" | "builtin" | "built_in" => act.built_in = val.to_string(),
@@ -851,14 +862,27 @@ impl AppConfig {
             return candidate_conf_ini;
         }
 
-        // 3. Next to executable fallbacks (legacy conf.json, conf.b)
-        let candidate_json = exe_dir.join("conf.json");
-        if candidate_json.exists() {
-            return candidate_json;
+        // 3. User-dropped legacy config files (easymic.d, conf.d, conf.b, conf.json)
+        let candidate_d = exe_dir.join("easymic.d");
+        if candidate_d.exists() {
+            let is_compiler_artifact = fs::read_to_string(&candidate_d)
+                .map(|content| content.contains("easymic.exe:") || content.contains(".rs"))
+                .unwrap_or(false);
+            if !is_compiler_artifact {
+                return candidate_d;
+            }
+        }
+        let candidate_conf_d = exe_dir.join("conf.d");
+        if candidate_conf_d.exists() {
+            return candidate_conf_d;
         }
         let candidate_b = exe_dir.join("conf.b");
         if candidate_b.exists() {
             return candidate_b;
+        }
+        let candidate_json = exe_dir.join("conf.json");
+        if candidate_json.exists() {
+            return candidate_json;
         }
 
         // Default ALWAYS beside the executable: config.ini
@@ -870,6 +894,16 @@ impl AppConfig {
     pub fn load() -> Self {
         let exe_dir = Self::get_exe_dir();
         let target_ini = exe_dir.join("config.ini");
+
+        // Clean up compiler artifact if present (rustc emits easymic.d dep-info on build)
+        let candidate_d = exe_dir.join("easymic.d");
+        if candidate_d.exists() {
+            if let Ok(content) = fs::read_to_string(&candidate_d) {
+                if content.contains("easymic.exe:") || content.contains(".rs") {
+                    let _ = fs::remove_file(&candidate_d);
+                }
+            }
+        }
 
         if target_ini.exists() {
             return Self::load_from_path(&target_ini);
@@ -972,8 +1006,14 @@ impl AppConfig {
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), std::io::Error> {
-        // If the path was an old conf.b binary file, migrate target to config.ini to avoid corrupting binary
-        let target_path = if path.extension().and_then(|e| e.to_str()) == Some("b") {
+        // If the path was an old legacy file (conf.b, easymic.d, conf.d), migrate target to config.ini
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let file_name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        let target_path = if ext.eq_ignore_ascii_case("b")
+            || ext.eq_ignore_ascii_case("d")
+            || file_name.eq_ignore_ascii_case("easymic.d")
+            || file_name.eq_ignore_ascii_case("conf.d")
+        {
             path.with_file_name("config.ini")
         } else {
             path.to_path_buf()
@@ -1093,6 +1133,8 @@ mod tests {
                 || path.ends_with("conf.ini")
                 || path.ends_with("conf.b")
                 || path.ends_with("conf.json")
+                || path.ends_with("easymic.d")
+                || path.ends_with("conf.d")
         );
     }
 
@@ -1182,4 +1224,48 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_ini_formatting_actions_blank_line_and_no_trailing_blank_line() {
+        let cfg = AppConfig::default();
+        let ini = cfg.to_ini();
+
+        // Must have blank line between Actions Configuration header and [Action.1]
+        assert!(
+            ini.contains(";\n\n[Action.1]")
+                || ini.contains(";\r\n\r\n[Action.1]")
+                || ini.contains("; ==============================================================================\n\n[Action.1]")
+                || ini.contains("; ==============================================================================\r\n\r\n[Action.1]")
+        );
+
+        // Must NOT end with double newline (no extra blank line at the end)
+        assert!(!ini.ends_with("\n\n"));
+        assert!(!ini.ends_with("\r\n\r\n"));
+        assert!(ini.ends_with("Args = \n") || ini.ends_with("Args = \r\n"));
+    }
+
+    #[test]
+    fn test_non_config_text_rejected_by_parse_ini() {
+        let fake_dep_info = "C:\\projects\\easymic.exe: C:\\projects\\src\\main.rs C:\\projects\\build.rs\n";
+        assert!(AppConfig::parse_ini(fake_dep_info).is_none());
+    }
+
+    #[test]
+    fn test_save_to_path_redirects_legacy_extensions() {
+        let temp_dir = std::env::temp_dir().join("easymic_test_migration");
+        let _ = fs::create_dir_all(&temp_dir);
+
+        let legacy_d = temp_dir.join("easymic.d");
+        let cfg = AppConfig::default();
+        let res = cfg.save_to_path(&legacy_d);
+        assert!(res.is_ok());
+
+        // easymic.d should NOT have been created; config.ini should exist instead
+        assert!(!legacy_d.exists());
+        let migrated_ini = temp_dir.join("config.ini");
+        assert!(migrated_ini.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }
+
