@@ -19,6 +19,7 @@ use crate::input::keys::get_hotkey_name;
 use crate::ui::indicator::IndicatorWindow;
 use parking_lot::RwLock;
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Arc;
 use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -236,8 +237,7 @@ pub struct SettingsWindow {
 unsafe impl Send for SettingsWindow {}
 unsafe impl Sync for SettingsWindow {}
 
-static CURRENT_SETTINGS: parking_lot::Mutex<Option<Arc<parking_lot::Mutex<SettingsWindow>>>> =
-    parking_lot::Mutex::new(None);
+static CURRENT_SETTINGS_HWND: AtomicIsize = AtomicIsize::new(0);
 
 impl SettingsWindow {
     #[allow(clippy::too_many_arguments)]
@@ -253,14 +253,16 @@ impl SettingsWindow {
         _diagnostics: Arc<DiagnosticsBuffer>,
         capture_session: Arc<HotkeyCaptureSession>,
     ) {
-        let mut guard = CURRENT_SETTINGS.lock();
-        if let Some(ref current) = *guard {
-            let win = current.lock();
-            unsafe {
-                let _ = ShowWindow(win.hwnd, SW_SHOW);
-                let _ = SetForegroundWindow(win.hwnd);
+        let existing_val = CURRENT_SETTINGS_HWND.load(Ordering::Acquire);
+        if existing_val != 0 {
+            let existing = HWND(existing_val as *mut _);
+            if unsafe { IsWindow(existing).as_bool() } {
+                unsafe {
+                    let _ = ShowWindow(existing, SW_RESTORE);
+                    let _ = SetForegroundWindow(existing);
+                }
+                return;
             }
-            return;
         }
 
         let orig = config.read().clone();
@@ -269,26 +271,24 @@ impl SettingsWindow {
         // Enable indicator dragging while settings dialog is open
         indicator.toggle_interactivity(true);
 
-        let window = Arc::new(parking_lot::Mutex::new(Self {
+        let window = Box::new(Self {
             hwnd: HWND::default(),
-            config: config.clone(),
+            config,
             orig_config: orig,
-            state: state.clone(),
-            audio: audio.clone(),
-            sound: sound.clone(),
-            hooks: hooks.clone(),
-            indicator: indicator.clone(),
-            capture_session: capture_session.clone(),
+            state,
+            audio,
+            sound,
+            hooks,
+            indicator,
+            capture_session,
             active_tab: 0,
             tab_panels: [HWND::default(); 5],
             autostart_initial: autostart,
             autostart_pending: autostart,
-        }));
+        });
 
-        *guard = Some(window.clone());
-        drop(guard);
+        let state_ptr = Box::into_raw(window);
 
-        let wnd_ptr = Arc::into_raw(window) as *mut std::ffi::c_void;
         unsafe {
             let class_name = w!("EasyMicSettingsWindow");
             let wc = WNDCLASSEXW {
@@ -314,9 +314,11 @@ impl SettingsWindow {
                 parent,
                 None,
                 hinstance,
-                Some(wnd_ptr),
+                Some(state_ptr as *mut _),
             )
             .expect("Failed to create SettingsWindow");
+
+            CURRENT_SETTINGS_HWND.store(hwnd.0 as isize, Ordering::Release);
 
             // Center window on screen
             let mut rc = RECT::default();
@@ -398,13 +400,11 @@ unsafe extern "system" fn settings_wndproc(
         WM_CREATE => {
             let cs = lparam.0 as *const CREATESTRUCTW;
             if !cs.is_null() && !(*cs).lpCreateParams.is_null() {
-                let win_arc = Arc::from_raw(
-                    (*cs).lpCreateParams as *const parking_lot::Mutex<SettingsWindow>,
-                );
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, Arc::into_raw(win_arc.clone()) as isize);
-                let mut win = win_arc.lock();
+                let state_ptr = (*cs).lpCreateParams as *mut SettingsWindow;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
+                let win = &mut *state_ptr;
                 win.hwnd = hwnd;
-                init_settings_controls(hwnd, &mut win);
+                init_settings_controls(hwnd, win);
             }
             LRESULT(0)
         }
@@ -415,10 +415,9 @@ unsafe extern "system" fn settings_wndproc(
                 let tab_ctrl = (*pnmh).hwndFrom;
                 let cur_sel =
                     SendMessageW(tab_ctrl, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
-                let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
-                    as *const parking_lot::Mutex<SettingsWindow>;
+                let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsWindow;
                 if !win_ptr.is_null() {
-                    let mut win = (*win_ptr).lock();
+                    let win = &mut *win_ptr;
                     win.active_tab = cur_sel;
                     for (i, &panel) in win.tab_panels.iter().enumerate() {
                         let show = if i == cur_sel { SW_SHOW } else { SW_HIDE };
@@ -439,28 +438,25 @@ unsafe extern "system" fn settings_wndproc(
         WM_COMMAND => {
             let id = wparam.0 & 0xFFFF;
             let code = ((wparam.0 >> 16) & 0xFFFF) as u16;
-            let win_ptr =
-                GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const parking_lot::Mutex<SettingsWindow>;
+            let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsWindow;
             if !win_ptr.is_null() {
-                let mut win = (*win_ptr).lock();
-                handle_settings_command(hwnd, id, code, lparam, &mut win);
+                let win = &mut *win_ptr;
+                handle_settings_command(hwnd, id, code, lparam, win);
             }
             LRESULT(0)
         }
         WM_HSCROLL => {
-            let win_ptr =
-                GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const parking_lot::Mutex<SettingsWindow>;
+            let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsWindow;
             if !win_ptr.is_null() {
-                let mut win = (*win_ptr).lock();
-                handle_trackbar_scroll(HWND(lparam.0 as *mut _), &mut win);
+                let win = &mut *win_ptr;
+                handle_trackbar_scroll(HWND(lparam.0 as *mut _), win);
             }
             LRESULT(0)
         }
         WM_CLOSE => {
-            let win_ptr =
-                GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const parking_lot::Mutex<SettingsWindow>;
+            let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsWindow;
             if !win_ptr.is_null() {
-                let mut win = (*win_ptr).lock();
+                let win = &mut *win_ptr;
                 win.cancel_changes();
                 win.indicator.toggle_interactivity(false);
             }
@@ -468,13 +464,14 @@ unsafe extern "system" fn settings_wndproc(
             LRESULT(0)
         }
         WM_DESTROY => {
-            *CURRENT_SETTINGS.lock() = None;
-            let win_ptr =
-                GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const parking_lot::Mutex<SettingsWindow>;
+            CURRENT_SETTINGS_HWND.store(0, Ordering::Release);
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsWindow;
             if !win_ptr.is_null() {
-                let _ = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                let win_arc = Arc::from_raw(win_ptr);
-                win_arc.lock().indicator.toggle_interactivity(false);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                let _ = Box::from_raw(win_ptr);
             }
             LRESULT(0)
         }
@@ -2873,10 +2870,10 @@ fn handle_action_editor_command(hwnd: HWND, id: usize, state: &mut ActionEditorS
 
             // Refresh parent settings window hotkey list
             unsafe {
-                let win_ptr = GetWindowLongPtrW(state.parent_settings, GWLP_USERDATA)
-                    as *const parking_lot::Mutex<SettingsWindow>;
+                let win_ptr =
+                    GetWindowLongPtrW(state.parent_settings, GWLP_USERDATA) as *mut SettingsWindow;
                 if !win_ptr.is_null() {
-                    let win = (*win_ptr).lock();
+                    let win = &*win_ptr;
                     let h_list = get_ctrl(win.tab_panels[3], IDC_LST_ACTIONS);
                     if !h_list.is_invalid() && h_list.0 as isize != 0 {
                         let cfg = win.config.read();
