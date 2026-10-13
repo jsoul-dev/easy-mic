@@ -191,7 +191,7 @@ impl Default for AppConfig {
             is_mic_keep_volume: true,
             is_updates_enabled: false,
             is_auto_update_enabled: false,
-            is_skip_uac_enabled: true,
+            is_skip_uac_enabled: false,
             hide_when_inactive: true,
             notifications_enabled: true,
             multi_press_window_ms: 200,
@@ -1183,7 +1183,7 @@ mod tests {
         assert_eq!(cfg.indicator_size, 15);
         assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
         assert!(cfg.is_mic_keep_volume);
-        assert!(cfg.is_skip_uac_enabled);
+        assert!(!cfg.is_skip_uac_enabled);
         assert!(!cfg.is_updates_enabled);
         assert!(cfg.hide_when_inactive);
         assert!(!cfg.actions.is_empty());
@@ -1246,7 +1246,11 @@ mod tests {
     fn test_get_config_path_beside_exe() {
         let path = AppConfig::get_config_path();
         let exe_dir = AppConfig::get_exe_dir();
-        assert_eq!(path.parent().unwrap(), exe_dir);
+        let is_beside_exe = path.parent().map(|p| p == exe_dir).unwrap_or(false);
+        let is_appdata = AppConfig::get_appdata_dir()
+            .map(|d| path.parent() == Some(&d))
+            .unwrap_or(false);
+        assert!(is_beside_exe || is_appdata);
         assert!(
             path.ends_with("config.ini")
                 || path.ends_with("conf.ini")

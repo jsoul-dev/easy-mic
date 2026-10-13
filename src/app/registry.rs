@@ -112,6 +112,9 @@ pub fn remove_from_auto_startup() -> bool {
 }
 
 pub fn delete_scheduled_task() -> bool {
+    if !is_scheduled_task_present() {
+        return true;
+    }
     use std::os::windows::process::CommandExt;
     let status = std::process::Command::new("schtasks")
         .args(["/Delete", "/TN", TASK_NAME, "/F"])
@@ -121,6 +124,9 @@ pub fn delete_scheduled_task() -> bool {
 }
 
 pub fn create_scheduled_task() -> bool {
+    if is_scheduled_task_present() {
+        return true;
+    }
     let Some(raw_path) = get_current_exe_path() else {
         return false;
     };

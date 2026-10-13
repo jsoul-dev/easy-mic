@@ -51,10 +51,16 @@ impl AppLifecycle {
         // 1. Load configuration
         let config = Arc::new(RwLock::new(AppConfig::load()));
 
-        // Sync Windows autostart (registry or Task Scheduler) state with config.ini
+        // Sync Windows autostart state with config.ini silently (never prompt UAC on startup)
         {
             let cfg = config.read();
-            crate::app::registry::sync_autostart(cfg.start_with_windows, cfg.is_skip_uac_enabled);
+            if cfg.start_with_windows {
+                if !cfg.is_skip_uac_enabled || !crate::app::registry::is_scheduled_task_present() {
+                    crate::app::registry::add_to_auto_startup();
+                }
+            } else {
+                crate::app::registry::remove_from_auto_startup();
+            }
         }
 
         // 2. Authoritative state & diagnostics

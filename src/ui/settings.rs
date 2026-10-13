@@ -234,6 +234,8 @@ pub struct SettingsWindow {
     sounds_tooltip: HWND,
     autostart_initial: bool,
     autostart_pending: bool,
+    skip_uac_initial: bool,
+    skip_uac_pending: bool,
 }
 
 unsafe impl Send for SettingsWindow {}
@@ -268,7 +270,8 @@ impl SettingsWindow {
         }
 
         let orig = config.read().clone();
-        let autostart = config.read().start_with_windows;
+        let autostart = orig.start_with_windows;
+        let skip_uac = orig.is_skip_uac_enabled;
 
         // Enable indicator dragging while settings dialog is open
         indicator.toggle_interactivity(true);
@@ -288,6 +291,8 @@ impl SettingsWindow {
             sounds_tooltip: HWND::default(),
             autostart_initial: autostart,
             autostart_pending: autostart,
+            skip_uac_initial: skip_uac,
+            skip_uac_pending: skip_uac,
         });
 
         let state_ptr = Box::into_raw(window);
@@ -358,14 +363,20 @@ impl SettingsWindow {
             cfg.window_pos_x = pos_x;
             cfg.window_pos_y = pos_y;
             cfg.start_with_windows = self.autostart_pending;
+            cfg.is_skip_uac_enabled = self.skip_uac_pending;
             let _ = cfg.save();
         }
 
-        // Apply autostart (registry or Task Scheduler) setting
-        let cfg = self.config.read();
-        registry::sync_autostart(self.autostart_pending, cfg.is_skip_uac_enabled);
-        self.autostart_initial = self.autostart_pending;
+        let autostart_changed = self.autostart_pending != self.autostart_initial
+            || self.skip_uac_pending != self.skip_uac_initial;
 
+        if autostart_changed {
+            registry::sync_autostart(self.autostart_pending, self.skip_uac_pending);
+            self.autostart_initial = self.autostart_pending;
+            self.skip_uac_initial = self.skip_uac_pending;
+        }
+
+        let cfg = self.config.read();
         // Sync volume to audio device if mic volume is configured
         if cfg.mic_volume >= 0 {
             let _ = self.audio.set_volume_percent(cfg.mic_volume as u8);
@@ -382,10 +393,8 @@ impl SettingsWindow {
         // Restore original config
         *self.config.write() = self.orig_config.clone();
         let _ = self.orig_config.save();
-        registry::sync_autostart(
-            self.orig_config.start_with_windows,
-            self.orig_config.is_skip_uac_enabled,
-        );
+        self.autostart_pending = self.autostart_initial;
+        self.skip_uac_pending = self.skip_uac_initial;
         self.hooks.update_bindings();
         self.indicator.render();
     }
@@ -695,7 +704,7 @@ fn build_general_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         let _ = SendMessageW(
             h_uac,
             BM_SETCHECK,
-            WPARAM(if cfg.is_skip_uac_enabled { 1 } else { 0 }),
+            WPARAM(if win.skip_uac_initial { 1 } else { 0 }),
             LPARAM(0),
         );
         let _ = EnableWindow(h_uac, win.autostart_initial);
@@ -2163,8 +2172,7 @@ fn handle_settings_command(
             }
         }
         IDC_CHK_SKIP_UAC => {
-            let mut cfg = win.config.write();
-            cfg.is_skip_uac_enabled = !cfg.is_skip_uac_enabled;
+            win.skip_uac_pending = !win.skip_uac_pending;
         }
         IDC_CHK_UPDATES => {
             let mut cfg = win.config.write();
