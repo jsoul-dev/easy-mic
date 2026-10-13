@@ -22,17 +22,18 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Arc;
 use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::*;
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const TBM_GETPOS: u32 = WM_USER;
+const CB_SETDROPPEDWIDTH: u32 = 0x0160;
 
 static UI_NORMAL_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
 static UI_BOLD_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
@@ -230,6 +231,7 @@ pub struct SettingsWindow {
     capture_session: Arc<HotkeyCaptureSession>,
     active_tab: usize,
     tab_panels: [HWND; 5],
+    sounds_tooltip: HWND,
     autostart_initial: bool,
     autostart_pending: bool,
 }
@@ -283,6 +285,7 @@ impl SettingsWindow {
             capture_session,
             active_tab: 0,
             tab_panels: [HWND::default(); 5],
+            sounds_tooltip: HWND::default(),
             autostart_initial: autostart,
             autostart_pending: autostart,
         });
@@ -1005,7 +1008,7 @@ fn build_indicator_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
     }
 }
 
-fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
+fn build_sounds_panel(panel: HWND, win: &mut SettingsWindow, hinst: HINSTANCE) {
     let cfg = win.config.read();
     unsafe {
         // Mic volume slider
@@ -1278,6 +1281,13 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
             None,
         )
         .unwrap();
+
+        // Create tooltip control for sound comboboxes and long path hover
+        let h_tip = create_tooltip_control(panel, hinst);
+        win.sounds_tooltip = h_tip;
+
+        attach_combo_tooltip(h_tip, panel, h_mute_cmb, &cfg.mute_sound_source);
+        attach_combo_tooltip(h_tip, panel, h_unmute_cmb, &cfg.unmute_sound_source);
     }
 }
 
@@ -1381,15 +1391,229 @@ pub fn prompt_browse_sound(parent: HWND) -> Option<String> {
     None
 }
 
+fn create_tooltip_control(parent: HWND, hinst: HINSTANCE) -> HWND {
+    unsafe {
+        let h_tip = CreateWindowExW(
+            WS_EX_TOPMOST,
+            w!("tooltips_class32"),
+            PCWSTR::null(),
+            WINDOW_STYLE(WS_POPUP.0 | TTS_NOPREFIX | TTS_ALWAYSTIP),
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            parent,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap_or_default();
+        if !h_tip.is_invalid() && h_tip.0 as usize != 0 {
+            let _ = SendMessageW(h_tip, TTM_SETMAXTIPWIDTH, WPARAM(0), LPARAM(750));
+        }
+        h_tip
+    }
+}
+
+fn attach_combo_tooltip(h_tip: HWND, h_parent: HWND, h_cmb: HWND, initial_text: &str) {
+    if h_tip.is_invalid() || h_tip.0 as usize == 0 || h_cmb.is_invalid() || h_cmb.0 as usize == 0 {
+        return;
+    }
+    unsafe {
+        let mut wide: Vec<u16> = initial_text.encode_utf16().chain(std::iter::once(0)).collect();
+        let ti = TTTOOLINFOW {
+            cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+            uFlags: TTF_SUBCLASS | TTF_IDISHWND,
+            hwnd: h_parent,
+            uId: h_cmb.0 as usize,
+            rect: RECT::default(),
+            hinst: HINSTANCE::default(),
+            lpszText: PWSTR(wide.as_mut_ptr()),
+            lParam: LPARAM(0),
+            lpReserved: std::ptr::null_mut(),
+        };
+        let _ = SendMessageW(h_tip, TTM_ADDTOOLW, WPARAM(0), LPARAM(&ti as *const _ as isize));
+
+        // Also subclass the drop-down listbox (ComboLBox) to show tracking tooltip on hover
+        let mut info = COMBOBOXINFO {
+            cbSize: std::mem::size_of::<COMBOBOXINFO>() as u32,
+            ..Default::default()
+        };
+        if GetComboBoxInfo(h_cmb, &mut info).is_ok()
+            && !info.hwndList.is_invalid()
+            && info.hwndList.0 as usize != 0
+        {
+            let ti_list = TTTOOLINFOW {
+                cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+                uFlags: TTF_TRACK | TTF_ABSOLUTE,
+                hwnd: info.hwndList,
+                uId: info.hwndList.0 as usize,
+                rect: RECT::default(),
+                hinst: HINSTANCE::default(),
+                lpszText: PWSTR::null(),
+                lParam: LPARAM(0),
+                lpReserved: std::ptr::null_mut(),
+            };
+            let _ = SendMessageW(
+                h_tip,
+                TTM_ADDTOOLW,
+                WPARAM(0),
+                LPARAM(&ti_list as *const _ as isize),
+            );
+            let _ = SetWindowSubclass(
+                info.hwndList,
+                Some(combolbox_subclass_proc),
+                100,
+                h_tip.0 as usize,
+            );
+        }
+    }
+}
+
+fn update_combo_tooltip(h_tip: HWND, h_parent: HWND, h_cmb: HWND, text: &str) {
+    if h_tip.is_invalid() || h_tip.0 as usize == 0 || h_cmb.is_invalid() || h_cmb.0 as usize == 0 {
+        return;
+    }
+    unsafe {
+        let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let ti = TTTOOLINFOW {
+            cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+            uFlags: TTF_SUBCLASS | TTF_IDISHWND,
+            hwnd: h_parent,
+            uId: h_cmb.0 as usize,
+            rect: RECT::default(),
+            hinst: HINSTANCE::default(),
+            lpszText: PWSTR(wide.as_mut_ptr()),
+            lParam: LPARAM(0),
+            lpReserved: std::ptr::null_mut(),
+        };
+        let _ = SendMessageW(
+            h_tip,
+            TTM_UPDATETIPTEXTW,
+            WPARAM(0),
+            LPARAM(&ti as *const _ as isize),
+        );
+    }
+}
+
+unsafe extern "system" fn combolbox_subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _u_id_subclass: usize,
+    dw_ref_data: usize,
+) -> LRESULT {
+    let h_tip = HWND(dw_ref_data as *mut _);
+    match msg {
+        WM_MOUSEMOVE => {
+            let pt_lparam = LPARAM(lparam.0);
+            let item_res = SendMessageW(hwnd, LB_ITEMFROMPOINT, WPARAM(0), pt_lparam).0 as u32;
+            let outside = (item_res >> 16) != 0;
+            if !outside {
+                let idx = (item_res & 0xFFFF) as usize;
+                let len = SendMessageW(hwnd, LB_GETTEXTLEN, WPARAM(idx), LPARAM(0)).0 as usize;
+                if len > 0 {
+                    let mut buf = vec![0u16; len + 1];
+                    let read_len = SendMessageW(
+                        hwnd,
+                        LB_GETTEXT,
+                        WPARAM(idx),
+                        LPARAM(buf.as_mut_ptr() as isize),
+                    )
+                    .0 as usize;
+                    if read_len > 0 {
+                        let text = String::from_utf16_lossy(&buf[..read_len]);
+                        // Show tooltip for long strings or file paths
+                        if text.len() > 10 || text.contains('\\') || text.contains('/') {
+                            let mut cursor_pt = POINT::default();
+                            let _ = GetCursorPos(&mut cursor_pt);
+                            let mut wide: Vec<u16> =
+                                text.encode_utf16().chain(std::iter::once(0)).collect();
+                            let ti = TTTOOLINFOW {
+                                cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+                                uFlags: TTF_TRACK | TTF_ABSOLUTE,
+                                hwnd,
+                                uId: hwnd.0 as usize,
+                                rect: RECT::default(),
+                                hinst: HINSTANCE::default(),
+                                lpszText: PWSTR(wide.as_mut_ptr()),
+                                lParam: LPARAM(0),
+                                lpReserved: std::ptr::null_mut(),
+                            };
+                            let _ = SendMessageW(
+                                h_tip,
+                                TTM_UPDATETIPTEXTW,
+                                WPARAM(0),
+                                LPARAM(&ti as *const _ as isize),
+                            );
+                            let track_pos = ((cursor_pt.x + 16) as u16 as u32)
+                                | (((cursor_pt.y + 16) as u16 as u32) << 16);
+                            let _ = SendMessageW(
+                                h_tip,
+                                TTM_TRACKPOSITION,
+                                WPARAM(0),
+                                LPARAM(track_pos as isize),
+                            );
+                            let _ = SendMessageW(
+                                h_tip,
+                                TTM_TRACKACTIVATE,
+                                WPARAM(1),
+                                LPARAM(&ti as *const _ as isize),
+                            );
+                            return DefSubclassProc(hwnd, msg, wparam, lparam);
+                        }
+                    }
+                }
+            }
+            // Deactivate tooltip if hovering over non-long item or outside
+            let ti = TTTOOLINFOW {
+                cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+                uFlags: TTF_TRACK | TTF_ABSOLUTE,
+                hwnd,
+                uId: hwnd.0 as usize,
+                ..Default::default()
+            };
+            let _ = SendMessageW(
+                h_tip,
+                TTM_TRACKACTIVATE,
+                WPARAM(0),
+                LPARAM(&ti as *const _ as isize),
+            );
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        WM_MOUSELEAVE | WM_CAPTURECHANGED => {
+            let ti = TTTOOLINFOW {
+                cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+                uFlags: TTF_TRACK | TTF_ABSOLUTE,
+                hwnd,
+                uId: hwnd.0 as usize,
+                ..Default::default()
+            };
+            let _ = SendMessageW(
+                h_tip,
+                TTM_TRACKACTIVATE,
+                WPARAM(0),
+                LPARAM(&ti as *const _ as isize),
+            );
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        WM_NCDESTROY => {
+            let _ = RemoveWindowSubclass(hwnd, Some(combolbox_subclass_proc), 100);
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
+}
+
 fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<String>>) {
     let mut options = vec![
-        "off.wav".to_string(),
-        "on.wav".to_string(),
+        "Off".to_string(),
+        "On".to_string(),
         "Mute".to_string(),
         "Unmute".to_string(),
-        "Tick".to_string(),
-        "Enable".to_string(),
         "Disable".to_string(),
+        "Enable".to_string(),
         "None".to_string(),
     ];
 
@@ -1404,6 +1628,16 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
                     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
                     if ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("mp3") {
                         if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                            // Skip embedded preset aliases
+                            if name.eq_ignore_ascii_case("on.wav")
+                                || name.eq_ignore_ascii_case("off.wav")
+                                || name.eq_ignore_ascii_case("on")
+                                || name.eq_ignore_ascii_case("off")
+                                || name.eq_ignore_ascii_case("tick.wav")
+                                || name.eq_ignore_ascii_case("tick")
+                            {
+                                continue;
+                            }
                             if !options.iter().any(|o| o.eq_ignore_ascii_case(name)) {
                                 options.push(name.to_string());
                             }
@@ -1417,7 +1651,15 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
     // Add recent sounds
     if let Some(recent_set) = recent {
         for s in recent_set {
-            if !s.is_empty() && !options.iter().any(|o| o.eq_ignore_ascii_case(s)) {
+            if !s.is_empty()
+                && !s.eq_ignore_ascii_case("on.wav")
+                && !s.eq_ignore_ascii_case("off.wav")
+                && !s.eq_ignore_ascii_case("on")
+                && !s.eq_ignore_ascii_case("off")
+                && !s.eq_ignore_ascii_case("tick.wav")
+                && !s.eq_ignore_ascii_case("tick")
+                && !options.iter().any(|o| o.eq_ignore_ascii_case(s))
+            {
                 options.push(s.clone());
             }
         }
@@ -1425,7 +1667,20 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
 
     // Add current selection if not present
     let curr_trimmed = current.trim();
-    if !curr_trimmed.is_empty() && !options.iter().any(|o| o.eq_ignore_ascii_case(curr_trimmed)) {
+    let is_preset_alias = curr_trimmed.eq_ignore_ascii_case("off.wav")
+        || curr_trimmed.eq_ignore_ascii_case("off")
+        || curr_trimmed.eq_ignore_ascii_case("on.wav")
+        || curr_trimmed.eq_ignore_ascii_case("on")
+        || curr_trimmed.eq_ignore_ascii_case("mute")
+        || curr_trimmed.eq_ignore_ascii_case("unmute")
+        || curr_trimmed.eq_ignore_ascii_case("disable")
+        || curr_trimmed.eq_ignore_ascii_case("enable")
+        || curr_trimmed.eq_ignore_ascii_case("none");
+
+    if !curr_trimmed.is_empty()
+        && !is_preset_alias
+        && !options.iter().any(|o| o.eq_ignore_ascii_case(curr_trimmed))
+    {
         options.push(curr_trimmed.to_string());
     }
 
@@ -1435,14 +1690,29 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
         for (i, opt) in options.iter().enumerate() {
             let wide: Vec<u16> = opt.encode_utf16().chain(std::iter::once(0)).collect();
             let _ = SendMessageW(cmb, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
-            if curr_trimmed.eq_ignore_ascii_case(opt)
-                || (curr_trimmed.to_ascii_lowercase().ends_with("off.wav") && opt == "off.wav")
-                || (curr_trimmed.to_ascii_lowercase().ends_with("on.wav") && opt == "on.wav")
-            {
+            let is_match = if opt == "Off" {
+                curr_trimmed.eq_ignore_ascii_case("off")
+                    || curr_trimmed.eq_ignore_ascii_case("off.wav")
+                    || (curr_trimmed.to_ascii_lowercase().ends_with("off.wav")
+                        && !curr_trimmed.contains('\\')
+                        && !curr_trimmed.contains('/'))
+            } else if opt == "On" {
+                curr_trimmed.eq_ignore_ascii_case("on")
+                    || curr_trimmed.eq_ignore_ascii_case("on.wav")
+                    || (curr_trimmed.to_ascii_lowercase().ends_with("on.wav")
+                        && !curr_trimmed.contains('\\')
+                        && !curr_trimmed.contains('/'))
+            } else {
+                curr_trimmed.eq_ignore_ascii_case(opt)
+            };
+            if is_match {
                 selected = i;
             }
         }
         let _ = SendMessageW(cmb, CB_SETCURSEL, WPARAM(selected), LPARAM(0));
+
+        // Expand dropdown list width to 460px so long file paths are easily readable
+        let _ = SendMessageW(cmb, CB_SETDROPPEDWIDTH, WPARAM(460), LPARAM(0));
     }
 }
 
@@ -1963,6 +2233,7 @@ fn handle_settings_command(
             if let Some(path) = prompt_browse_sound(hwnd) {
                 let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
                 select_or_add_combo_item(h_cmb, &path);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &path);
                 let mut cfg = win.config.write();
                 cfg.mute_sound_source = path.clone();
                 cfg.recent_sounds.insert(path.clone());
@@ -1974,6 +2245,7 @@ fn handle_settings_command(
             if let Some(path) = prompt_browse_sound(hwnd) {
                 let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
                 select_or_add_combo_item(h_cmb, &path);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &path);
                 let mut cfg = win.config.write();
                 cfg.unmute_sound_source = path.clone();
                 cfg.recent_sounds.insert(path.clone());
@@ -1985,6 +2257,7 @@ fn handle_settings_command(
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
             let text = get_combo_selected_text(h_cmb);
             if !text.is_empty() {
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &text);
                 let mut cfg = win.config.write();
                 cfg.mute_sound_source = text.clone();
                 cfg.recent_sounds.insert(text);
@@ -1994,6 +2267,7 @@ fn handle_settings_command(
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
             let text = get_combo_selected_text(h_cmb);
             if !text.is_empty() {
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &text);
                 let mut cfg = win.config.write();
                 cfg.unmute_sound_source = text.clone();
                 cfg.recent_sounds.insert(text);
@@ -2134,6 +2408,7 @@ struct ActionEditorState {
     capture_session: Arc<HotkeyCaptureSession>,
     config: Arc<RwLock<AppConfig>>,
     sound: Arc<SoundManager>,
+    tooltip: HWND,
 }
 
 fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) {
@@ -2162,6 +2437,7 @@ fn open_action_editor(parent: HWND, index: Option<usize>, win: &SettingsWindow) 
         capture_session: win.capture_session.clone(),
         config: win.config.clone(),
         sound: win.sound.clone(),
+        tooltip: HWND::default(),
     });
 
     let hinst = HINSTANCE(unsafe { GetModuleHandleW(None).unwrap_or_default() }.0);
@@ -2251,9 +2527,15 @@ unsafe extern "system" fn action_editor_wndproc(
         WM_CTLCOLORDLG => unsafe { LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize) },
         WM_COMMAND => {
             let id = wparam.0 & 0xFFFF;
+            let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
             let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ActionEditorState;
             if !state_ptr.is_null() {
                 let state = &mut *state_ptr;
+                if id == IDC_ACT_CMB_SOUND && code == CBN_SELCHANGE {
+                    let h_snd = get_ctrl(hwnd, IDC_ACT_CMB_SOUND);
+                    let sel_txt = get_combo_selected_text(h_snd);
+                    update_combo_tooltip(state.tooltip, hwnd, h_snd, &sel_txt);
+                }
                 handle_action_editor_command(hwnd, id, state);
             }
             LRESULT(0)
@@ -2592,6 +2874,9 @@ fn init_action_editor_controls(hwnd: HWND, state: &mut ActionEditorState) {
         )
         .unwrap();
         populate_sound_combo(h_snd, &act.sound, Some(&state.config.read().recent_sounds));
+        let h_tip = create_tooltip_control(hwnd, hinst);
+        state.tooltip = h_tip;
+        attach_combo_tooltip(h_tip, hwnd, h_snd, &act.sound);
 
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -2788,6 +3073,7 @@ fn handle_action_editor_command(hwnd: HWND, id: usize, state: &mut ActionEditorS
             if let Some(path) = prompt_browse_sound(hwnd) {
                 let h_snd = unsafe { get_ctrl(hwnd, IDC_ACT_CMB_SOUND) };
                 select_or_add_combo_item(h_snd, &path);
+                update_combo_tooltip(state.tooltip, hwnd, h_snd, &path);
                 state.sound.play(&path, 100);
             }
         }

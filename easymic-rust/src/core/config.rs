@@ -176,9 +176,7 @@ impl Default for AppConfig {
             show_notification: false,
         }];
 
-        let mut recent_sounds = BTreeSet::new();
-        recent_sounds.insert("off.wav".to_string());
-        recent_sounds.insert("on.wav".to_string());
+        let recent_sounds = BTreeSet::new();
 
         Self {
             window_pos_x: 0,
@@ -201,8 +199,8 @@ impl Default for AppConfig {
             skipped_versions: BTreeSet::new(),
             actions: default_actions,
             recent_sounds,
-            mute_sound_source: "off.wav".to_string(),
-            unmute_sound_source: "on.wav".to_string(),
+            mute_sound_source: "Off".to_string(),
+            unmute_sound_source: "On".to_string(),
             start_with_windows: false,
         }
     }
@@ -1026,8 +1024,8 @@ mod tests {
         assert!(!cfg.actions.is_empty());
         assert_eq!(cfg.actions[0].name, "Toggle mute");
         assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
-        assert_eq!(cfg.mute_sound_source, "off.wav");
-        assert_eq!(cfg.unmute_sound_source, "on.wav");
+        assert_eq!(cfg.mute_sound_source, "Off");
+        assert_eq!(cfg.unmute_sound_source, "On");
     }
 
     #[test]

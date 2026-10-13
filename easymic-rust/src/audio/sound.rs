@@ -19,11 +19,10 @@ use windows::Win32::Media::Audio::{
 // Embedded assets
 const BYTES_MUTE: &[u8] = include_bytes!("../../../src/Resources/mute.wav");
 const BYTES_UNMUTE: &[u8] = include_bytes!("../../../src/Resources/unmute.wav");
-const BYTES_TICK: &[u8] = include_bytes!("../../../src/Resources/tick.wav");
 const BYTES_ENABLE: &[u8] = include_bytes!("../../../src/Resources/enable.wav");
 const BYTES_DISABLE: &[u8] = include_bytes!("../../../src/Resources/disable.wav");
 
-// Fallback embedded user sound cues
+// Embedded user sound cues
 const BYTES_ON: &[u8] = include_bytes!("../../../sounds/on.wav");
 const BYTES_OFF: &[u8] = include_bytes!("../../../sounds/off.wav");
 
@@ -36,6 +35,16 @@ pub struct BundledSound {
 
 pub const BUNDLED_SOUNDS: &[BundledSound] = &[
     BundledSound {
+        key: "Off",
+        title: "Off chime",
+        bytes: BYTES_OFF,
+    },
+    BundledSound {
+        key: "On",
+        title: "On chime",
+        bytes: BYTES_ON,
+    },
+    BundledSound {
         key: "Mute",
         title: "Discord mute",
         bytes: BYTES_MUTE,
@@ -46,36 +55,28 @@ pub const BUNDLED_SOUNDS: &[BundledSound] = &[
         bytes: BYTES_UNMUTE,
     },
     BundledSound {
-        key: "Tick",
-        title: "Tick",
-        bytes: BYTES_TICK,
+        key: "Disable",
+        title: "Disable",
+        bytes: BYTES_DISABLE,
     },
     BundledSound {
         key: "Enable",
         title: "Enable",
         bytes: BYTES_ENABLE,
     },
-    BundledSound {
-        key: "Disable",
-        title: "Disable",
-        bytes: BYTES_DISABLE,
-    },
-    BundledSound {
-        key: "on.wav",
-        title: "On chime",
-        bytes: BYTES_ON,
-    },
-    BundledSound {
-        key: "off.wav",
-        title: "Off chime",
-        bytes: BYTES_OFF,
-    },
 ];
 
 pub fn find_bundled_sound(key: &str) -> Option<&'static BundledSound> {
+    let k = key.trim();
+    if k.eq_ignore_ascii_case("off") || k.eq_ignore_ascii_case("off.wav") {
+        return BUNDLED_SOUNDS.iter().find(|s| s.key == "Off");
+    }
+    if k.eq_ignore_ascii_case("on") || k.eq_ignore_ascii_case("on.wav") {
+        return BUNDLED_SOUNDS.iter().find(|s| s.key == "On");
+    }
     BUNDLED_SOUNDS
         .iter()
-        .find(|s| s.key.eq_ignore_ascii_case(key))
+        .find(|s| s.key.eq_ignore_ascii_case(k))
 }
 
 struct PlayCommand {
@@ -154,15 +155,8 @@ impl SoundManager {
             let _ = waveOutSetVolume(HWAVEOUT::default(), dword_vol);
         }
 
-        // 1. Check if it's a bundled sound or on.wav / off.wav
+        // 1. Check if it's a bundled sound or Off / On
         if let Some(bundled) = find_bundled_sound(sound_source) {
-            // Also check if a local override exists on disk
-            if let Some(disk_path) = Self::resolve_sound_path(sound_source) {
-                if let Ok(data) = fs::read(&disk_path) {
-                    Self::play_memory_buffer(&data, sound_source, cached_buffers);
-                    return;
-                }
-            }
             Self::play_static_bytes(bundled.bytes);
             return;
         }
@@ -267,18 +261,22 @@ mod tests {
 
     #[test]
     fn test_bundled_sounds_presence() {
+        assert!(find_bundled_sound("Off").is_some());
+        assert!(find_bundled_sound("On").is_some());
         assert!(find_bundled_sound("Mute").is_some());
         assert!(find_bundled_sound("Unmute").is_some());
-        assert!(find_bundled_sound("Tick").is_some());
+        assert!(find_bundled_sound("Disable").is_some());
+        assert!(find_bundled_sound("Enable").is_some());
         assert!(find_bundled_sound("on.wav").is_some());
         assert!(find_bundled_sound("off.wav").is_some());
+        assert!(find_bundled_sound("Tick").is_none());
     }
 
     #[test]
     fn test_sound_manager_queue_nonblocking() {
         let sm = SoundManager::new();
         // Sending commands should be non-blocking
-        sm.play("Tick", 50);
+        sm.play("Off", 50);
         sm.play("Nonexistent", 100);
         sm.shutdown();
     }
