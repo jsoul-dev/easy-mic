@@ -207,6 +207,27 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// Normalizes sound cue names, mapping built-in sound filenames and legacy paths to canonical preset names.
+    pub fn normalize_sound_name(name: &str) -> String {
+        let trimmed = name.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if lower == "off"
+            || lower == "off.wav"
+            || lower.ends_with("\\off.wav")
+            || lower.ends_with("/off.wav")
+        {
+            return "Off".to_string();
+        }
+        if lower == "on"
+            || lower == "on.wav"
+            || lower.ends_with("\\on.wav")
+            || lower.ends_with("/on.wav")
+        {
+            return "On".to_string();
+        }
+        trimmed.to_string()
+    }
+
     /// Parses Glaze BEVE binary configuration (conf.b format from C++ EasyMic).
     pub fn parse_beve(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < 16 {
@@ -365,16 +386,14 @@ impl AppConfig {
         if let Some(idx) = find_key("MuteSoundSource") {
             if let Some(s) = read_beve_str(idx, 15) {
                 if !s.is_empty() {
-                    cfg.recent_sounds.insert(s.clone());
-                    cfg.mute_sound_source = s;
+                    cfg.mute_sound_source = Self::normalize_sound_name(&s);
                 }
             }
         }
         if let Some(idx) = find_key("UnmuteSoundSource") {
             if let Some(s) = read_beve_str(idx, 17) {
                 if !s.is_empty() {
-                    cfg.recent_sounds.insert(s.clone());
-                    cfg.unmute_sound_source = s;
+                    cfg.unmute_sound_source = Self::normalize_sound_name(&s);
                 }
             }
         }
@@ -481,13 +500,9 @@ impl AppConfig {
         writeln!(out, "; Feedback sound volume (0-100 percent)").unwrap();
         writeln!(out, "BellVolume = {}", self.bell_volume).unwrap();
         writeln!(out, "; Sound cue played when muting the microphone").unwrap();
-        writeln!(out, "MuteSound = {}", self.mute_sound_source).unwrap();
+        writeln!(out, "MuteSound = {}", Self::normalize_sound_name(&self.mute_sound_source)).unwrap();
         writeln!(out, "; Sound cue played when unmuting the microphone").unwrap();
-        writeln!(out, "UnmuteSound = {}", self.unmute_sound_source).unwrap();
-        if !self.recent_sounds.is_empty() {
-            let sounds: Vec<&str> = self.recent_sounds.iter().map(|s| s.as_str()).collect();
-            writeln!(out, "RecentSounds = {}", sounds.join("; ")).unwrap();
-        }
+        writeln!(out, "UnmuteSound = {}", Self::normalize_sound_name(&self.unmute_sound_source)).unwrap();
         writeln!(out).unwrap();
 
         writeln!(
@@ -759,24 +774,15 @@ impl AppConfig {
                     }
                     "mutesound" | "mutesoundsource" => {
                         if !val.is_empty() {
-                            cfg.mute_sound_source = val.to_string();
-                            cfg.recent_sounds.insert(val.to_string());
+                            cfg.mute_sound_source = Self::normalize_sound_name(val);
                         }
                     }
                     "unmutesound" | "unmutesoundsource" => {
                         if !val.is_empty() {
-                            cfg.unmute_sound_source = val.to_string();
-                            cfg.recent_sounds.insert(val.to_string());
+                            cfg.unmute_sound_source = Self::normalize_sound_name(val);
                         }
                     }
-                    "recentsounds" => {
-                        for s in val.split([',', ';']) {
-                            let item = s.trim();
-                            if !item.is_empty() {
-                                cfg.recent_sounds.insert(item.to_string());
-                            }
-                        }
-                    }
+                    "recentsounds" => {}
                     _ => {}
                 }
             } else if sec_lower == "hotkeys"
@@ -1171,8 +1177,8 @@ mod tests {
                 assert!(!cfg.is_updates_enabled);
                 assert!(cfg.hide_when_inactive);
                 assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
-                assert!(cfg.mute_sound_source.ends_with("off.wav"));
-                assert!(cfg.unmute_sound_source.ends_with("on.wav"));
+                assert_eq!(cfg.mute_sound_source, "Off");
+                assert_eq!(cfg.unmute_sound_source, "On");
             }
         }
     }

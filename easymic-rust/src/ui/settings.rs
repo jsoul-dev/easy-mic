@@ -33,7 +33,6 @@ use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindow
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const TBM_GETPOS: u32 = WM_USER;
-const CB_SETDROPPEDWIDTH: u32 = 0x0160;
 
 static UI_NORMAL_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
 static UI_BOLD_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
@@ -347,13 +346,13 @@ impl SettingsWindow {
         let (pos_x, pos_y) = self.indicator.get_position();
         {
             let mut cfg = self.config.write();
-            if !mute_txt.is_empty() {
-                cfg.mute_sound_source = mute_txt.clone();
-                cfg.recent_sounds.insert(mute_txt);
+            let norm_mute = AppConfig::normalize_sound_name(&mute_txt);
+            let norm_unmute = AppConfig::normalize_sound_name(&unmute_txt);
+            if !norm_mute.is_empty() {
+                cfg.mute_sound_source = norm_mute;
             }
-            if !unmute_txt.is_empty() {
-                cfg.unmute_sound_source = unmute_txt.clone();
-                cfg.recent_sounds.insert(unmute_txt);
+            if !norm_unmute.is_empty() {
+                cfg.unmute_sound_source = norm_unmute;
             }
             cfg.window_pos_x = pos_x;
             cfg.window_pos_y = pos_y;
@@ -1667,15 +1666,20 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
 
     // Add current selection if not present
     let curr_trimmed = current.trim();
-    let is_preset_alias = curr_trimmed.eq_ignore_ascii_case("off.wav")
-        || curr_trimmed.eq_ignore_ascii_case("off")
-        || curr_trimmed.eq_ignore_ascii_case("on.wav")
-        || curr_trimmed.eq_ignore_ascii_case("on")
-        || curr_trimmed.eq_ignore_ascii_case("mute")
-        || curr_trimmed.eq_ignore_ascii_case("unmute")
-        || curr_trimmed.eq_ignore_ascii_case("disable")
-        || curr_trimmed.eq_ignore_ascii_case("enable")
-        || curr_trimmed.eq_ignore_ascii_case("none");
+    let lower_trimmed = curr_trimmed.to_ascii_lowercase();
+    let is_preset_alias = lower_trimmed == "off.wav"
+        || lower_trimmed == "off"
+        || lower_trimmed.ends_with("\\off.wav")
+        || lower_trimmed.ends_with("/off.wav")
+        || lower_trimmed == "on.wav"
+        || lower_trimmed == "on"
+        || lower_trimmed.ends_with("\\on.wav")
+        || lower_trimmed.ends_with("/on.wav")
+        || lower_trimmed == "mute"
+        || lower_trimmed == "unmute"
+        || lower_trimmed == "disable"
+        || lower_trimmed == "enable"
+        || lower_trimmed == "none";
 
     if !curr_trimmed.is_empty()
         && !is_preset_alias
@@ -1691,17 +1695,15 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
             let wide: Vec<u16> = opt.encode_utf16().chain(std::iter::once(0)).collect();
             let _ = SendMessageW(cmb, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
             let is_match = if opt == "Off" {
-                curr_trimmed.eq_ignore_ascii_case("off")
-                    || curr_trimmed.eq_ignore_ascii_case("off.wav")
-                    || (curr_trimmed.to_ascii_lowercase().ends_with("off.wav")
-                        && !curr_trimmed.contains('\\')
-                        && !curr_trimmed.contains('/'))
+                lower_trimmed == "off"
+                    || lower_trimmed == "off.wav"
+                    || lower_trimmed.ends_with("\\off.wav")
+                    || lower_trimmed.ends_with("/off.wav")
             } else if opt == "On" {
-                curr_trimmed.eq_ignore_ascii_case("on")
-                    || curr_trimmed.eq_ignore_ascii_case("on.wav")
-                    || (curr_trimmed.to_ascii_lowercase().ends_with("on.wav")
-                        && !curr_trimmed.contains('\\')
-                        && !curr_trimmed.contains('/'))
+                lower_trimmed == "on"
+                    || lower_trimmed == "on.wav"
+                    || lower_trimmed.ends_with("\\on.wav")
+                    || lower_trimmed.ends_with("/on.wav")
             } else {
                 curr_trimmed.eq_ignore_ascii_case(opt)
             };
@@ -1710,9 +1712,6 @@ fn populate_sound_combo(cmb: HWND, current: &str, recent: Option<&BTreeSet<Strin
             }
         }
         let _ = SendMessageW(cmb, CB_SETCURSEL, WPARAM(selected), LPARAM(0));
-
-        // Expand dropdown list width to 460px so long file paths are easily readable
-        let _ = SendMessageW(cmb, CB_SETDROPPEDWIDTH, WPARAM(460), LPARAM(0));
     }
 }
 
@@ -2232,45 +2231,45 @@ fn handle_settings_command(
         IDC_BTN_BROWSE_MUTE => {
             if let Some(path) = prompt_browse_sound(hwnd) {
                 let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
-                select_or_add_combo_item(h_cmb, &path);
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &path);
+                let norm = AppConfig::normalize_sound_name(&path);
+                select_or_add_combo_item(h_cmb, &norm);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
                 let mut cfg = win.config.write();
-                cfg.mute_sound_source = path.clone();
-                cfg.recent_sounds.insert(path.clone());
+                cfg.mute_sound_source = norm.clone();
                 drop(cfg);
-                win.sound.play(&path, 100);
+                win.sound.play(&norm, 100);
             }
         }
         IDC_BTN_BROWSE_UNMUTE => {
             if let Some(path) = prompt_browse_sound(hwnd) {
                 let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
-                select_or_add_combo_item(h_cmb, &path);
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &path);
+                let norm = AppConfig::normalize_sound_name(&path);
+                select_or_add_combo_item(h_cmb, &norm);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
                 let mut cfg = win.config.write();
-                cfg.unmute_sound_source = path.clone();
-                cfg.recent_sounds.insert(path.clone());
+                cfg.unmute_sound_source = norm.clone();
                 drop(cfg);
-                win.sound.play(&path, 100);
+                win.sound.play(&norm, 100);
             }
         }
         IDC_CMB_MUTE_SOUND => {
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
             let text = get_combo_selected_text(h_cmb);
             if !text.is_empty() {
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &text);
+                let norm = AppConfig::normalize_sound_name(&text);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
                 let mut cfg = win.config.write();
-                cfg.mute_sound_source = text.clone();
-                cfg.recent_sounds.insert(text);
+                cfg.mute_sound_source = norm;
             }
         }
         IDC_CMB_UNMUTE_SOUND => {
             let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
             let text = get_combo_selected_text(h_cmb);
             if !text.is_empty() {
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &text);
+                let norm = AppConfig::normalize_sound_name(&text);
+                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
                 let mut cfg = win.config.write();
-                cfg.unmute_sound_source = text.clone();
-                cfg.recent_sounds.insert(text);
+                cfg.unmute_sound_source = norm;
             }
         }
         IDC_BTN_ADD_ACTION => {
