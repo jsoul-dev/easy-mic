@@ -1,10 +1,10 @@
 # Easy-Mic
 
-[![Rust](https://img.shields.io/badge/language-Rust_2021-DEA584?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?style=flat-square&logo=windows)](https://microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Fork](https://img.shields.io/badge/fork_of-k1tbyte%2Feasymic-orange?style=flat-square&logo=github)](https://github.com/k1tbyte/easymic)
 [![Release](https://img.shields.io/github/v/release/jsoul-dev/easy-mic?style=flat-square)](https://github.com/jsoul-dev/easy-mic/releases)
+[![Download](https://img.shields.io/badge/download-Easy--Mic.exe-2ea44f?style=flat-square&logo=windows)](https://github.com/jsoul-dev/easy-mic/releases/latest/download/Easy-Mic.exe)
 
 **Easy-Mic** is a high-performance, ultra-lightweight desktop application for global, system-level microphone control on Windows. It eliminates the hassle of memorizing disjointed hotkeys across Teams, Discord, OBS, Slack, and games by centralizing microphone state management directly at the Windows hardware audio endpoint level.
 
