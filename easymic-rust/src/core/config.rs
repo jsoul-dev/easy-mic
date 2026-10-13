@@ -146,10 +146,10 @@ fn default_version() -> i32 {
     2
 }
 fn default_mute_sound() -> String {
-    "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string()
+    "off.wav".to_string()
 }
 fn default_unmute_sound() -> String {
-    "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string()
+    "on.wav".to_string()
 }
 
 // Shift modifier flag: 0x08. Virtual key 'Z': 0x5A. Hotkey mask: (0x5A << 8) | 0x08
@@ -157,7 +157,7 @@ pub const SHIFT_Z_HOTKEY_MASK: u64 = (0x5Au64 << 8) | 0x08;
 
 impl Default for AppConfig {
     fn default() -> Self {
-        // Default action: Shift + Z for Toggle Mute matching user's exact configuration
+        // Default action: Shift + Z for Toggle Mute
         let default_actions = vec![ActionConfig {
             name: "Toggle mute".to_string(),
             built_in: "Toggle mute".to_string(),
@@ -175,12 +175,6 @@ impl Default for AppConfig {
         }];
 
         let mut recent_sounds = BTreeSet::new();
-        recent_sounds.insert(
-            "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string(),
-        );
-        recent_sounds.insert(
-            "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string(),
-        );
         recent_sounds.insert("off.wav".to_string());
         recent_sounds.insert("on.wav".to_string());
 
@@ -205,10 +199,8 @@ impl Default for AppConfig {
             skipped_versions: BTreeSet::new(),
             actions: default_actions,
             recent_sounds,
-            mute_sound_source:
-                "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string(),
-            unmute_sound_source:
-                "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string(),
+            mute_sound_source: "off.wav".to_string(),
+            unmute_sound_source: "on.wav".to_string(),
         }
     }
 }
@@ -411,13 +403,15 @@ impl AppConfig {
         if local_b.exists() {
             return local_b;
         }
-        let system_b = PathBuf::from(r"C:\Program Files\Easymic\conf.b");
-        if system_b.exists() {
-            return system_b;
-        }
-        let system_json = PathBuf::from(r"C:\Program Files\Easymic\conf.json");
-        if system_json.exists() {
-            return system_json;
+        if let Ok(pf) = std::env::var("ProgramFiles") {
+            let system_b = PathBuf::from(&pf).join("Easymic").join("conf.b");
+            if system_b.exists() {
+                return system_b;
+            }
+            let system_json = PathBuf::from(&pf).join("Easymic").join("conf.json");
+            if system_json.exists() {
+                return system_json;
+            }
         }
 
         if let Ok(exe) = std::env::current_exe() {
@@ -514,8 +508,8 @@ mod tests {
         assert!(!cfg.actions.is_empty());
         assert_eq!(cfg.actions[0].name, "Toggle mute");
         assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
-        assert!(cfg.mute_sound_source.ends_with("off.wav"));
-        assert!(cfg.unmute_sound_source.ends_with("on.wav"));
+        assert_eq!(cfg.mute_sound_source, "off.wav");
+        assert_eq!(cfg.unmute_sound_source, "on.wav");
     }
 
     #[test]
@@ -535,21 +529,23 @@ mod tests {
 
     #[test]
     fn test_parse_conf_b_file() {
-        let path = Path::new(r"C:\Program Files\Easymic\conf.b");
-        if path.exists() {
-            let bytes = fs::read(path).expect("read conf.b");
-            let cfg = AppConfig::parse_beve(&bytes).expect("parse beve");
-            assert_eq!(cfg.bell_volume, 50);
-            assert_eq!(cfg.mic_volume, 100);
-            assert_eq!(cfg.indicator_size, 16);
-            assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
-            assert!(cfg.is_mic_keep_volume);
-            assert!(cfg.is_skip_uac_enabled);
-            assert!(!cfg.is_updates_enabled);
-            assert!(cfg.hide_when_inactive);
-            assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
-            assert!(cfg.mute_sound_source.ends_with("off.wav"));
-            assert!(cfg.unmute_sound_source.ends_with("on.wav"));
+        if let Ok(pf) = std::env::var("ProgramFiles") {
+            let path = PathBuf::from(pf).join("Easymic").join("conf.b");
+            if path.exists() {
+                let bytes = fs::read(&path).expect("read conf.b");
+                let cfg = AppConfig::parse_beve(&bytes).expect("parse beve");
+                assert_eq!(cfg.bell_volume, 50);
+                assert_eq!(cfg.mic_volume, 100);
+                assert_eq!(cfg.indicator_size, 16);
+                assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
+                assert!(cfg.is_mic_keep_volume);
+                assert!(cfg.is_skip_uac_enabled);
+                assert!(!cfg.is_updates_enabled);
+                assert!(cfg.hide_when_inactive);
+                assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
+                assert!(cfg.mute_sound_source.ends_with("off.wav"));
+                assert!(cfg.unmute_sound_source.ends_with("on.wav"));
+            }
         }
     }
 }
