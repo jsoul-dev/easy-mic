@@ -2266,9 +2266,11 @@ unsafe extern "system" fn action_editor_wndproc(
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
         }
-        WM_DESTROY => {
+        WM_DESTROY => LRESULT(0),
+        WM_NCDESTROY => {
             let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ActionEditorState;
             if !state_ptr.is_null() {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let _ = Box::from_raw(state_ptr);
             }
             LRESULT(0)
