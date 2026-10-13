@@ -2136,7 +2136,7 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
 fn handle_settings_command(
     hwnd: HWND,
     id: usize,
-    _code: u16,
+    code: u16,
     _lparam: LPARAM,
     win: &mut SettingsWindow,
 ) {
@@ -2170,29 +2170,41 @@ fn handle_settings_command(
             cfg.is_updates_enabled = !cfg.is_updates_enabled;
         }
         IDC_CMB_INDICATOR_STATE => {
-            let h_cmb = unsafe { get_ctrl(win.tab_panels[1], IDC_CMB_INDICATOR_STATE) };
-            let sel = unsafe { SendMessageW(h_cmb, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 };
-            let mut cfg = win.config.write();
-            cfg.indicator_state = match sel {
-                0 => IndicatorState::Hidden,
-                1 => IndicatorState::Muted,
-                _ => IndicatorState::MutedOrTalk,
-            };
-            win.indicator.render();
+            if code == CBN_SELCHANGE as u16 {
+                let h_cmb = unsafe { get_ctrl(win.tab_panels[1], IDC_CMB_INDICATOR_STATE) };
+                let sel = unsafe { SendMessageW(h_cmb, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 };
+                if sel >= 0 {
+                    {
+                        let mut cfg = win.config.write();
+                        cfg.indicator_state = match sel {
+                            0 => IndicatorState::Hidden,
+                            1 => IndicatorState::Muted,
+                            _ => IndicatorState::MutedOrTalk,
+                        };
+                    }
+                    win.indicator.render();
+                }
+            }
         }
         IDC_CHK_CAPTURE_EXCLUDE => {
-            let mut cfg = win.config.write();
-            cfg.exclude_from_capture = !cfg.exclude_from_capture;
+            {
+                let mut cfg = win.config.write();
+                cfg.exclude_from_capture = !cfg.exclude_from_capture;
+            }
             win.indicator.render();
         }
         IDC_CHK_ON_TOP => {
-            let mut cfg = win.config.write();
-            cfg.on_top_exclusive = !cfg.on_top_exclusive;
+            {
+                let mut cfg = win.config.write();
+                cfg.on_top_exclusive = !cfg.on_top_exclusive;
+            }
             win.indicator.render();
         }
         IDC_CHK_HIDE_INACTIVE => {
-            let mut cfg = win.config.write();
-            cfg.hide_when_inactive = !cfg.hide_when_inactive;
+            {
+                let mut cfg = win.config.write();
+                cfg.hide_when_inactive = !cfg.hide_when_inactive;
+            }
             win.indicator.render();
         }
         IDC_CHK_NOTIFICATIONS => {
@@ -2256,23 +2268,27 @@ fn handle_settings_command(
             }
         }
         IDC_CMB_MUTE_SOUND => {
-            let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
-            let text = get_combo_selected_text(h_cmb);
-            if !text.is_empty() {
-                let norm = AppConfig::normalize_sound_name(&text);
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
-                let mut cfg = win.config.write();
-                cfg.mute_sound_source = norm;
+            if code == CBN_SELCHANGE as u16 {
+                let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_MUTE_SOUND) };
+                let text = get_combo_selected_text(h_cmb);
+                if !text.is_empty() {
+                    let norm = AppConfig::normalize_sound_name(&text);
+                    update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
+                    let mut cfg = win.config.write();
+                    cfg.mute_sound_source = norm;
+                }
             }
         }
         IDC_CMB_UNMUTE_SOUND => {
-            let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
-            let text = get_combo_selected_text(h_cmb);
-            if !text.is_empty() {
-                let norm = AppConfig::normalize_sound_name(&text);
-                update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
-                let mut cfg = win.config.write();
-                cfg.unmute_sound_source = norm;
+            if code == CBN_SELCHANGE as u16 {
+                let h_cmb = unsafe { get_ctrl(win.tab_panels[2], IDC_CMB_UNMUTE_SOUND) };
+                let text = get_combo_selected_text(h_cmb);
+                if !text.is_empty() {
+                    let norm = AppConfig::normalize_sound_name(&text);
+                    update_combo_tooltip(win.sounds_tooltip, win.tab_panels[2], h_cmb, &norm);
+                    let mut cfg = win.config.write();
+                    cfg.unmute_sound_source = norm;
+                }
             }
         }
         IDC_BTN_ADD_ACTION => {
