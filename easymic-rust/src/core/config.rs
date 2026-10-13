@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum IndicatorState {
-    Hidden = 0,
     #[default]
+    Hidden = 0,
     Muted = 1,
     MutedOrTalk = 2,
 }
@@ -95,11 +95,11 @@ pub struct AppConfig {
     pub on_top_exclusive: bool,
     #[serde(default = "default_true")]
     pub is_mic_keep_volume: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub is_updates_enabled: bool,
-    #[serde(default)]
+    #[serde(default = "default_false")]
     pub is_auto_update_enabled: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub is_skip_uac_enabled: bool,
     #[serde(default = "default_true")]
     pub hide_when_inactive: bool,
@@ -122,10 +122,10 @@ pub struct AppConfig {
 }
 
 fn default_bell_volume() -> i8 {
-    25
+    50
 }
 fn default_mic_volume() -> i8 {
-    -1
+    100
 }
 fn default_indicator_size() -> u8 {
     16
@@ -136,6 +136,9 @@ fn default_volume_threshold() -> f32 {
 fn default_true() -> bool {
     true
 }
+fn default_false() -> bool {
+    false
+}
 fn default_multi_press_window() -> u16 {
     200
 }
@@ -143,10 +146,10 @@ fn default_version() -> i32 {
     2
 }
 fn default_mute_sound() -> String {
-    "Mute".to_string()
+    "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string()
 }
 fn default_unmute_sound() -> String {
-    "Unmute".to_string()
+    "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string()
 }
 
 // Shift modifier flag: 0x08. Virtual key 'Z': 0x5A. Hotkey mask: (0x5A << 8) | 0x08
@@ -154,7 +157,7 @@ pub const SHIFT_Z_HOTKEY_MASK: u64 = (0x5Au64 << 8) | 0x08;
 
 impl Default for AppConfig {
     fn default() -> Self {
-        // Default action: Shift + Z for Toggle Mute
+        // Default action: Shift + Z for Toggle Mute matching user's exact configuration
         let default_actions = vec![ActionConfig {
             name: "Toggle mute".to_string(),
             built_in: "Toggle mute".to_string(),
@@ -168,38 +171,225 @@ impl Default for AppConfig {
             block: false,
             tap_only: false,
             sound_volume: 100,
-            show_notification: true,
+            show_notification: false,
         }];
+
+        let mut recent_sounds = BTreeSet::new();
+        recent_sounds.insert(
+            "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string(),
+        );
+        recent_sounds.insert(
+            "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string(),
+        );
+        recent_sounds.insert("off.wav".to_string());
+        recent_sounds.insert("on.wav".to_string());
 
         Self {
             window_pos_x: 0,
             window_pos_y: 0,
-            bell_volume: 25,
-            mic_volume: -1,
+            bell_volume: 50,
+            mic_volume: 100,
             indicator_size: 16,
-            indicator_state: IndicatorState::Muted,
+            indicator_state: IndicatorState::Hidden,
             indicator_volume_threshold: 0.001,
             exclude_from_capture: false,
             on_top_exclusive: false,
             is_mic_keep_volume: true,
-            is_updates_enabled: true,
+            is_updates_enabled: false,
             is_auto_update_enabled: false,
-            is_skip_uac_enabled: false,
+            is_skip_uac_enabled: true,
             hide_when_inactive: true,
             notifications_enabled: true,
             multi_press_window_ms: 200,
             version: 2,
             skipped_versions: BTreeSet::new(),
             actions: default_actions,
-            recent_sounds: BTreeSet::new(),
-            mute_sound_source: "Mute".to_string(),
-            unmute_sound_source: "Unmute".to_string(),
+            recent_sounds,
+            mute_sound_source:
+                "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\off.wav".to_string(),
+            unmute_sound_source:
+                "D:\\Backups\\[ This PC Backup ] July 11, 2026\\Music\\Mic Cue\\on.wav".to_string(),
         }
     }
 }
 
 impl AppConfig {
-    /// Resolves default configuration file path relative to current executable or working dir.
+    /// Parses Glaze BEVE binary configuration (conf.b format from C++ EasyMic).
+    pub fn parse_beve(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 16 {
+            return None;
+        }
+        let mut cfg = Self::default();
+
+        let find_key = |key: &str| -> Option<usize> {
+            let key_bytes = key.as_bytes();
+            bytes
+                .windows(key_bytes.len())
+                .position(|window| window == key_bytes)
+        };
+
+        if let Some(idx) = find_key("WindowPosX") {
+            let v_idx = idx + 10;
+            if v_idx + 4 < bytes.len() && bytes[v_idx] == 0x49 {
+                cfg.window_pos_x =
+                    i32::from_le_bytes(bytes[v_idx + 1..v_idx + 5].try_into().unwrap_or_default());
+            }
+        }
+        if let Some(idx) = find_key("WindowPosY") {
+            let v_idx = idx + 10;
+            if v_idx + 4 < bytes.len() && bytes[v_idx] == 0x49 {
+                cfg.window_pos_y =
+                    i32::from_le_bytes(bytes[v_idx + 1..v_idx + 5].try_into().unwrap_or_default());
+            }
+        }
+        if let Some(idx) = find_key("BellVolume") {
+            let v_idx = idx + 10;
+            if v_idx + 1 < bytes.len() && bytes[v_idx] == 0x09 {
+                cfg.bell_volume = bytes[v_idx + 1] as i8;
+            }
+        }
+        if let Some(idx) = find_key("MicVolume") {
+            let v_idx = idx + 9;
+            if v_idx + 1 < bytes.len() && bytes[v_idx] == 0x09 {
+                cfg.mic_volume = bytes[v_idx + 1] as i8;
+            }
+        }
+        if let Some(idx) = find_key("IndicatorSize") {
+            let v_idx = idx + 13;
+            if v_idx + 1 < bytes.len() && bytes[v_idx] == 0x11 {
+                cfg.indicator_size = bytes[v_idx + 1];
+            }
+        }
+        if let Some(idx) = find_key("IndicatorState") {
+            let v_idx = idx + 14;
+            if v_idx + 4 < bytes.len() && bytes[v_idx] == 0x49 {
+                let st =
+                    i32::from_le_bytes(bytes[v_idx + 1..v_idx + 5].try_into().unwrap_or_default());
+                cfg.indicator_state = match st {
+                    0 => IndicatorState::Hidden,
+                    1 => IndicatorState::Muted,
+                    2 => IndicatorState::MutedOrTalk,
+                    _ => IndicatorState::Hidden,
+                };
+            }
+        }
+        if let Some(idx) = find_key("IndicatorVolumeThreshold") {
+            let v_idx = idx + 24;
+            if v_idx + 4 < bytes.len() && bytes[v_idx] == 0x41 {
+                cfg.indicator_volume_threshold =
+                    f32::from_le_bytes(bytes[v_idx + 1..v_idx + 5].try_into().unwrap_or_default());
+            }
+        }
+        if let Some(idx) = find_key("ExcludeFromCapture") {
+            let v_idx = idx + 18;
+            if v_idx < bytes.len() {
+                cfg.exclude_from_capture = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("OnTopExclusive") {
+            let v_idx = idx + 14;
+            if v_idx < bytes.len() {
+                cfg.on_top_exclusive = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("IsMicKeepVolume") {
+            let v_idx = idx + 15;
+            if v_idx < bytes.len() {
+                cfg.is_mic_keep_volume = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("IsUpdatesEnabled") {
+            let v_idx = idx + 16;
+            if v_idx < bytes.len() {
+                cfg.is_updates_enabled = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("IsAutoUpdateEnabled") {
+            let v_idx = idx + 19;
+            if v_idx < bytes.len() {
+                cfg.is_auto_update_enabled = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("IsSkipUACEnabled") {
+            let v_idx = idx + 16;
+            if v_idx < bytes.len() {
+                cfg.is_skip_uac_enabled = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("HideWhenInactive") {
+            let v_idx = idx + 16;
+            if v_idx < bytes.len() {
+                cfg.hide_when_inactive = bytes[v_idx] == 0x18;
+            }
+        }
+        if let Some(idx) = find_key("Toggle mute") {
+            let v_idx = idx + 11;
+            if v_idx + 8 < bytes.len() && bytes[v_idx] == 0x71 {
+                let mask =
+                    u64::from_le_bytes(bytes[v_idx + 1..v_idx + 9].try_into().unwrap_or_default());
+                if mask != 0 {
+                    cfg.actions = vec![ActionConfig {
+                        name: "Toggle mute".to_string(),
+                        built_in: "Toggle mute".to_string(),
+                        command: String::new(),
+                        args: String::new(),
+                        sound: String::new(),
+                        notification: "Mic {mic}".to_string(),
+                        hotkey: mask,
+                        on_release: false,
+                        presses: 1,
+                        block: false,
+                        tap_only: false,
+                        sound_volume: 100,
+                        show_notification: false,
+                    }];
+                }
+            }
+        }
+
+        let read_beve_str = |idx: usize, key_len: usize| -> Option<String> {
+            let v_idx = idx + key_len;
+            if v_idx + 2 >= bytes.len() {
+                return None;
+            }
+            if bytes[v_idx] == 0x02 {
+                let raw_len = u16::from_le_bytes([bytes[v_idx + 1], bytes[v_idx + 2]]) as usize;
+                let s_len = raw_len >> 2;
+                let s_start = v_idx + 3;
+                if s_start + s_len <= bytes.len() {
+                    return String::from_utf8(bytes[s_start..s_start + s_len].to_vec()).ok();
+                }
+            } else if bytes[v_idx] & 0x03 == 0 {
+                let s_len = (bytes[v_idx] >> 2) as usize;
+                let s_start = v_idx + 1;
+                if s_start + s_len <= bytes.len() {
+                    return String::from_utf8(bytes[s_start..s_start + s_len].to_vec()).ok();
+                }
+            }
+            None
+        };
+
+        if let Some(idx) = find_key("MuteSoundSource") {
+            if let Some(s) = read_beve_str(idx, 15) {
+                if !s.is_empty() {
+                    cfg.recent_sounds.insert(s.clone());
+                    cfg.mute_sound_source = s;
+                }
+            }
+        }
+        if let Some(idx) = find_key("UnmuteSoundSource") {
+            if let Some(s) = read_beve_str(idx, 17) {
+                if !s.is_empty() {
+                    cfg.recent_sounds.insert(s.clone());
+                    cfg.unmute_sound_source = s;
+                }
+            }
+        }
+
+        Some(cfg)
+    }
+
+    /// Resolves default configuration file path relative to current executable, working dir, or system install.
     pub fn get_config_path() -> PathBuf {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
@@ -211,7 +401,28 @@ impl AppConfig {
                 if candidate_b.exists() {
                     return candidate_b;
                 }
-                return candidate_json;
+            }
+        }
+        let local_json = PathBuf::from("conf.json");
+        if local_json.exists() {
+            return local_json;
+        }
+        let local_b = PathBuf::from("conf.b");
+        if local_b.exists() {
+            return local_b;
+        }
+        let system_b = PathBuf::from(r"C:\Program Files\Easymic\conf.b");
+        if system_b.exists() {
+            return system_b;
+        }
+        let system_json = PathBuf::from(r"C:\Program Files\Easymic\conf.json");
+        if system_json.exists() {
+            return system_json;
+        }
+
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                return parent.join("conf.json");
             }
         }
         PathBuf::from("conf.json")
@@ -229,28 +440,39 @@ impl AppConfig {
             return Self::default();
         }
 
-        match fs::read_to_string(path) {
-            Ok(content) => match serde_json::from_str::<AppConfig>(&content) {
-                Ok(mut cfg) => {
+        match fs::read(path) {
+            Ok(bytes) => {
+                // Try JSON first if it looks like UTF-8 JSON
+                if bytes.starts_with(b"{")
+                    || path.extension().and_then(|e| e.to_str()) == Some("json")
+                {
+                    if let Ok(mut cfg) = serde_json::from_slice::<AppConfig>(&bytes) {
+                        log::info!("Loaded configuration JSON from {:?}", path);
+                        if cfg.actions.is_empty() {
+                            cfg.actions = Self::default().actions;
+                        }
+                        return cfg;
+                    }
+                }
+                // Try BEVE conf.b binary format
+                if let Some(cfg) = Self::parse_beve(&bytes) {
+                    log::info!("Loaded configuration BEVE (conf.b) from {:?}", path);
+                    return cfg;
+                }
+                // Fallback attempt JSON deserialization anyway
+                if let Ok(mut cfg) = serde_json::from_slice::<AppConfig>(&bytes) {
                     log::info!("Loaded configuration from {:?}", path);
-                    // Ensure at least default Toggle mute exists if actions list was empty
                     if cfg.actions.is_empty() {
                         cfg.actions = Self::default().actions;
                     }
-                    cfg
+                    return cfg;
                 }
-                Err(err) => {
-                    log::warn!(
-                        "Failed to parse config json {:?}: {}, falling back to defaults",
-                        path,
-                        err
-                    );
-                    Self::default()
-                }
-            },
+                log::warn!("Failed to parse config from {:?}, using defaults", path);
+                Self::default()
+            }
             Err(err) => {
                 log::warn!(
-                    "Failed to read config file {:?}: {}, falling back to defaults",
+                    "Failed to read config file {:?}: {}, using defaults",
                     path,
                     err
                 );
@@ -281,11 +503,19 @@ mod tests {
     #[test]
     fn test_default_config() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.bell_volume, 25);
-        assert_eq!(cfg.indicator_state, IndicatorState::Muted);
+        assert_eq!(cfg.bell_volume, 50);
+        assert_eq!(cfg.mic_volume, 100);
+        assert_eq!(cfg.indicator_size, 16);
+        assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
+        assert!(cfg.is_mic_keep_volume);
+        assert!(cfg.is_skip_uac_enabled);
+        assert!(!cfg.is_updates_enabled);
+        assert!(cfg.hide_when_inactive);
         assert!(!cfg.actions.is_empty());
         assert_eq!(cfg.actions[0].name, "Toggle mute");
         assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
+        assert!(cfg.mute_sound_source.ends_with("off.wav"));
+        assert!(cfg.unmute_sound_source.ends_with("on.wav"));
     }
 
     #[test]
@@ -301,5 +531,25 @@ mod tests {
         assert_eq!(deserialized.window_pos_x, 100);
         assert_eq!(deserialized.window_pos_y, 200);
         assert_eq!(deserialized.actions, cfg.actions);
+    }
+
+    #[test]
+    fn test_parse_conf_b_file() {
+        let path = Path::new(r"C:\Program Files\Easymic\conf.b");
+        if path.exists() {
+            let bytes = fs::read(path).expect("read conf.b");
+            let cfg = AppConfig::parse_beve(&bytes).expect("parse beve");
+            assert_eq!(cfg.bell_volume, 50);
+            assert_eq!(cfg.mic_volume, 100);
+            assert_eq!(cfg.indicator_size, 16);
+            assert_eq!(cfg.indicator_state, IndicatorState::Hidden);
+            assert!(cfg.is_mic_keep_volume);
+            assert!(cfg.is_skip_uac_enabled);
+            assert!(!cfg.is_updates_enabled);
+            assert!(cfg.hide_when_inactive);
+            assert_eq!(cfg.actions[0].hotkey, SHIFT_Z_HOTKEY_MASK);
+            assert!(cfg.mute_sound_source.ends_with("off.wav"));
+            assert!(cfg.unmute_sound_source.ends_with("on.wav"));
+        }
     }
 }

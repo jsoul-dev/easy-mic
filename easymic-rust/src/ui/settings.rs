@@ -1115,14 +1115,30 @@ fn build_sounds_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
 }
 
 fn populate_sound_combo(cmb: HWND, current: &str) {
-    let options = ["Mute", "Unmute", "Tick", "Enable", "Disable", "None"];
+    let mut options = vec![
+        "off.wav", "on.wav", "Mute", "Unmute", "Tick", "Enable", "Disable", "None",
+    ];
+    let curr_display = if current.to_ascii_lowercase().ends_with("off.wav") {
+        "off.wav"
+    } else if current.to_ascii_lowercase().ends_with("on.wav") {
+        "on.wav"
+    } else {
+        current
+    };
+    if !curr_display.is_empty()
+        && !options
+            .iter()
+            .any(|&o| o.eq_ignore_ascii_case(curr_display))
+    {
+        options.push(curr_display);
+    }
     unsafe {
         let _ = SendMessageW(cmb, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
         let mut selected = 0;
         for (i, &opt) in options.iter().enumerate() {
             let wide: Vec<u16> = opt.encode_utf16().chain(std::iter::once(0)).collect();
             let _ = SendMessageW(cmb, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
-            if current.eq_ignore_ascii_case(opt) {
+            if curr_display.eq_ignore_ascii_case(opt) || current.eq_ignore_ascii_case(opt) {
                 selected = i;
             }
         }

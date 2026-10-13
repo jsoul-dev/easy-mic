@@ -175,13 +175,13 @@ impl SoundManager {
             }
         }
 
-        // 3. Fallback: if sound_source is "on.wav" or contains "on"
-        if sound_source.eq_ignore_ascii_case("on.wav") || sound_source.eq_ignore_ascii_case("on") {
+        // 3. Fallback: if sound_source is "on.wav" or ends with "on.wav" or "Unmute"
+        let lower = sound_source.to_ascii_lowercase();
+        if lower.ends_with("on.wav") || lower == "on" || lower == "unmute" {
             Self::play_static_bytes(BYTES_ON);
             return;
         }
-        if sound_source.eq_ignore_ascii_case("off.wav") || sound_source.eq_ignore_ascii_case("off")
-        {
+        if lower.ends_with("off.wav") || lower == "off" || lower == "mute" {
             Self::play_static_bytes(BYTES_OFF);
             return;
         }
