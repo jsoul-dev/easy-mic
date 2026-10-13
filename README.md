@@ -85,57 +85,6 @@ Easy-Mic will appear in your **System Tray** (near the clock).
 
 ---
 
-## Configuration Reference (`config.ini`)
-
-```ini
-[General]
-Version = 2
-StartWithWindows = false
-SkipUAC = true
-CheckForUpdates = false
-AutoUpdates = false
-NotificationsEnabled = true
-MultiPressWindowMs = 200
-
-[Indicator]
-State = Hidden
-Size = 15
-VolumeThreshold = 0.0010
-HideWhenInactive = true
-ExcludeFromCapture = false
-OnTopExclusive = false
-PositionX = 0
-PositionY = 0
-
-[Sounds]
-MicVolume = 100
-KeepMicVolume = true
-BellVolume = 50
-MuteSound = Off
-UnmuteSound = On
-
-; ==============================================================================
-; Actions Configuration
-; ==============================================================================
-
-[Action.1]
-Name = Toggle mute
-Type = Toggle mute
-Hotkey = SHIFT + Z
-Presses = 1
-OnRelease = false
-Block = false
-TapOnly = false
-Sound = 
-SoundVolume = 100
-Notification = Mic {mic}
-ShowNotification = false
-Command = 
-Args =
-```
-
----
-
 ## Building from Source
 
 ### Prerequisites
