@@ -820,110 +820,74 @@ impl AppConfig {
         }
     }
 
+    /// Returns the directory containing the running executable.
+    pub fn get_exe_dir() -> PathBuf {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                return parent.to_path_buf();
+            }
+        }
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
+
     /// Resolves primary configuration file path relative to current executable, working dir, or system install.
-    /// Prioritizes conf.ini / config.ini, then falls back to conf.json / conf.b.
+    /// Prioritizes conf.ini / config.ini beside the executable.
     pub fn get_config_path() -> PathBuf {
+        let exe_dir = Self::get_exe_dir();
+
         // 1. Next to current executable: conf.ini, config.ini
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let candidate_ini = parent.join("conf.ini");
-                if candidate_ini.exists() {
-                    return candidate_ini;
-                }
-                let candidate_config_ini = parent.join("config.ini");
-                if candidate_config_ini.exists() {
-                    return candidate_config_ini;
-                }
-            }
+        let candidate_ini = exe_dir.join("conf.ini");
+        if candidate_ini.exists() {
+            return candidate_ini;
+        }
+        let candidate_config_ini = exe_dir.join("config.ini");
+        if candidate_config_ini.exists() {
+            return candidate_config_ini;
         }
 
-        // 2. Local working directory: conf.ini, config.ini
-        let local_ini = PathBuf::from("conf.ini");
-        if local_ini.exists() {
-            return local_ini;
+        // 2. Next to executable fallbacks (legacy conf.json, conf.b)
+        let candidate_json = exe_dir.join("conf.json");
+        if candidate_json.exists() {
+            return candidate_json;
         }
-        let local_config_ini = PathBuf::from("config.ini");
-        if local_config_ini.exists() {
-            return local_config_ini;
-        }
-
-        // 3. Fallbacks next to executable (legacy conf.json, conf.b)
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let candidate_json = parent.join("conf.json");
-                if candidate_json.exists() {
-                    return candidate_json;
-                }
-                let candidate_b = parent.join("conf.b");
-                if candidate_b.exists() {
-                    return candidate_b;
-                }
-            }
+        let candidate_b = exe_dir.join("conf.b");
+        if candidate_b.exists() {
+            return candidate_b;
         }
 
-        // 4. Local working directory fallbacks (conf.json, conf.b)
-        let local_json = PathBuf::from("conf.json");
-        if local_json.exists() {
-            return local_json;
-        }
-        let local_b = PathBuf::from("conf.b");
-        if local_b.exists() {
-            return local_b;
-        }
-
-        // 5. System install directory: Program Files\Easymic
-        if let Ok(pf) = std::env::var("ProgramFiles") {
-            let sys_dir = PathBuf::from(&pf).join("Easymic");
-            let sys_ini = sys_dir.join("conf.ini");
-            if sys_ini.exists() {
-                return sys_ini;
-            }
-            let sys_config_ini = sys_dir.join("config.ini");
-            if sys_config_ini.exists() {
-                return sys_config_ini;
-            }
-            let sys_b = sys_dir.join("conf.b");
-            if sys_b.exists() {
-                return sys_b;
-            }
-            let sys_json = sys_dir.join("conf.json");
-            if sys_json.exists() {
-                return sys_json;
-            }
-        }
-
-        // 6. Default to conf.ini next to executable or working dir
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                return parent.join("conf.ini");
-            }
-        }
-        PathBuf::from("conf.ini")
+        // Default ALWAYS beside the executable:
+        candidate_ini
     }
 
     /// Loads configuration from disk, falling back to default.
-    /// If a legacy configuration exists (e.g. conf.json or conf.b) and conf.ini does not,
-    /// it automatically migrates the configuration to conf.ini.
+    /// Ensures conf.ini is created beside the executable immediately.
     pub fn load() -> Self {
-        let path = Self::get_config_path();
-        let cfg = Self::load_from_path(&path);
+        let exe_dir = Self::get_exe_dir();
+        let target_ini = exe_dir.join("conf.ini");
 
-        // If loaded from legacy path and conf.ini does not exist, save as conf.ini
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !ext.eq_ignore_ascii_case("ini") {
-            let ini_path = path.with_file_name("conf.ini");
-            if !ini_path.exists() {
-                if let Err(e) = cfg.save_to_path(&ini_path) {
-                    log::debug!("Could not auto-create conf.ini during migration: {}", e);
-                } else {
-                    log::info!(
-                        "Successfully migrated legacy configuration to {:?}",
-                        ini_path
-                    );
-                }
-            }
+        if target_ini.exists() {
+            return Self::load_from_path(&target_ini);
         }
 
+        let path = Self::get_config_path();
+        let cfg = if path.exists() {
+            Self::load_from_path(&path)
+        } else {
+            // Check legacy ProgramFiles import once if present
+            let mut imported = None;
+            if let Ok(pf) = std::env::var("ProgramFiles") {
+                let sys_b = PathBuf::from(pf).join("Easymic").join("conf.b");
+                if sys_b.exists() {
+                    if let Ok(bytes) = fs::read(&sys_b) {
+                        imported = Self::parse_beve(&bytes);
+                    }
+                }
+            }
+            imported.unwrap_or_default()
+        };
+
+        // Always create conf.ini beside the executable immediately
+        let _ = cfg.save_to_path(&target_ini);
         cfg
     }
 
@@ -995,10 +959,10 @@ impl AppConfig {
         }
     }
 
-    /// Saves configuration to disk (defaults to conf.ini).
+    /// Saves configuration to disk beside the executable (conf.ini).
     pub fn save(&self) -> Result<(), std::io::Error> {
-        let path = Self::get_config_path();
-        self.save_to_path(&path)
+        let target_path = Self::get_exe_dir().join("conf.ini");
+        self.save_to_path(&target_path)
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), std::io::Error> {
@@ -1111,6 +1075,16 @@ mod tests {
         assert_eq!(parsed.window_pos_y, 240);
         assert_eq!(parsed.mute_sound_source, "custom_off.wav");
         assert_eq!(parsed.unmute_sound_source, "custom_on.wav");
+    }
+
+    #[test]
+    fn test_get_config_path_beside_exe() {
+        let path = AppConfig::get_config_path();
+        let exe_dir = AppConfig::get_exe_dir();
+        assert_eq!(path.parent().unwrap(), exe_dir);
+        assert!(
+            path.ends_with("conf.ini") || path.ends_with("conf.b") || path.ends_with("conf.json")
+        );
     }
 
     #[test]

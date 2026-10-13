@@ -4,9 +4,8 @@
 //! 2. Indicator (State, Size, Threshold, On-Top, Capture exclusion, Drag/Position)
 //! 3. Sounds (Mic volume, Keep volume, Bell volume, Cues selection & test playback)
 //! 4. Hotkeys (Multi-press window, Actions list, Interactive Hotkey capture, Edit/Add/Remove)
-//! 5. About & Diagnostics (Version, Live toggle latency diagnostics, Logs, GitHub link)
+//! 5. About (Version, Configuration file shortcuts, GitHub repository)
 
-use crate::app::crash_handler::get_logger;
 use crate::app::registry;
 use crate::audio::manager::AudioManager;
 use crate::audio::sound::SoundManager;
@@ -21,7 +20,7 @@ use crate::ui::indicator::IndicatorWindow;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::*;
@@ -29,6 +28,104 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const TBM_GETPOS: u32 = WM_USER;
+
+static UI_NORMAL_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
+static UI_BOLD_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
+static UI_TITLE_FONT: parking_lot::Mutex<Option<isize>> = parking_lot::Mutex::new(None);
+
+pub fn get_ui_normal_font() -> HFONT {
+    let mut guard = UI_NORMAL_FONT.lock();
+    if let Some(font_val) = *guard {
+        return HFONT(font_val as *mut _);
+    }
+    unsafe {
+        let font = CreateFontW(
+            -13,
+            0,
+            0,
+            0,
+            FW_NORMAL.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.0 as u32,
+            OUT_DEFAULT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32,
+            CLEARTYPE_QUALITY.0 as u32,
+            DEFAULT_PITCH.0 as u32,
+            w!("Segoe UI"),
+        );
+        *guard = Some(font.0 as isize);
+        font
+    }
+}
+
+pub fn get_ui_bold_font() -> HFONT {
+    let mut guard = UI_BOLD_FONT.lock();
+    if let Some(font_val) = *guard {
+        return HFONT(font_val as *mut _);
+    }
+    unsafe {
+        let font = CreateFontW(
+            -13,
+            0,
+            0,
+            0,
+            FW_SEMIBOLD.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.0 as u32,
+            OUT_DEFAULT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32,
+            CLEARTYPE_QUALITY.0 as u32,
+            DEFAULT_PITCH.0 as u32,
+            w!("Segoe UI"),
+        );
+        *guard = Some(font.0 as isize);
+        font
+    }
+}
+
+pub fn get_ui_title_font() -> HFONT {
+    let mut guard = UI_TITLE_FONT.lock();
+    if let Some(font_val) = *guard {
+        return HFONT(font_val as *mut _);
+    }
+    unsafe {
+        let font = CreateFontW(
+            -20,
+            0,
+            0,
+            0,
+            FW_BOLD.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.0 as u32,
+            OUT_DEFAULT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32,
+            CLEARTYPE_QUALITY.0 as u32,
+            DEFAULT_PITCH.0 as u32,
+            w!("Segoe UI"),
+        );
+        *guard = Some(font.0 as isize);
+        font
+    }
+}
+
+unsafe extern "system" fn set_font_callback(child: HWND, lparam: LPARAM) -> BOOL {
+    let font = HFONT(lparam.0 as *mut _);
+    let _ = SendMessageW(child, WM_SETFONT, WPARAM(font.0 as usize), LPARAM(1));
+    BOOL(1)
+}
+
+pub fn apply_ui_font_recursive(hwnd: HWND, font: HFONT) {
+    unsafe {
+        let _ = SendMessageW(hwnd, WM_SETFONT, WPARAM(font.0 as usize), LPARAM(1));
+        let _ = EnumChildWindows(hwnd, Some(set_font_callback), LPARAM(font.0 as isize));
+    }
+}
 
 #[inline]
 unsafe fn get_ctrl(parent: HWND, id: usize) -> HWND {
@@ -88,11 +185,9 @@ const IDC_BTN_EDIT_ACTION: usize = 505;
 const IDC_BTN_DELETE_ACTION: usize = 506;
 
 // About tab
-const IDC_LBL_ABOUT_VERSION: usize = 601;
-const IDC_LBL_ABOUT_DIAG: usize = 602;
-const IDC_BTN_GITHUB: usize = 603;
-const IDC_LST_LOGS: usize = 604;
-const IDC_BTN_REFRESH_LOGS: usize = 605;
+const IDC_BTN_GITHUB: usize = 601;
+const IDC_BTN_OPEN_CONFIG: usize = 602;
+const IDC_BTN_OPEN_FOLDER: usize = 603;
 
 // Action Dialog control IDs
 const IDC_ACT_NAME: usize = 701;
@@ -123,7 +218,6 @@ pub struct SettingsWindow {
     sound: Arc<SoundManager>,
     hooks: Arc<HookManager>,
     indicator: Arc<IndicatorWindow>,
-    diagnostics: Arc<DiagnosticsBuffer>,
     capture_session: Arc<HotkeyCaptureSession>,
     active_tab: usize,
     tab_panels: [HWND; 5],
@@ -148,7 +242,7 @@ impl SettingsWindow {
         sound: Arc<SoundManager>,
         hooks: Arc<HookManager>,
         indicator: Arc<IndicatorWindow>,
-        diagnostics: Arc<DiagnosticsBuffer>,
+        _diagnostics: Arc<DiagnosticsBuffer>,
         capture_session: Arc<HotkeyCaptureSession>,
     ) {
         let mut guard = CURRENT_SETTINGS.lock();
@@ -176,7 +270,6 @@ impl SettingsWindow {
             sound: sound.clone(),
             hooks: hooks.clone(),
             indicator: indicator.clone(),
-            diagnostics: diagnostics.clone(),
             capture_session: capture_session.clone(),
             active_tab: 0,
             tab_panels: [HWND::default(); 5],
@@ -309,13 +402,18 @@ unsafe extern "system" fn settings_wndproc(
                         let show = if i == cur_sel { SW_SHOW } else { SW_HIDE };
                         let _ = ShowWindow(panel, show);
                     }
-                    if cur_sel == 4 {
-                        refresh_diagnostics_tab(win.tab_panels[4], &win);
-                    }
                 }
             }
             LRESULT(0)
         }
+        WM_CTLCOLORSTATIC => {
+            let hdc = HDC(wparam.0 as *mut _);
+            unsafe {
+                SetBkMode(hdc, TRANSPARENT);
+                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
+            }
+        }
+        WM_CTLCOLORDLG => unsafe { LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize) },
         WM_COMMAND => {
             let id = wparam.0 & 0xFFFF;
             let code = ((wparam.0 >> 16) & 0xFFFF) as u16;
@@ -387,7 +485,7 @@ fn init_settings_controls(hwnd: HWND, win: &mut SettingsWindow) {
             w!("Indicator"),
             w!("Sounds"),
             w!("Hotkeys"),
-            w!("About & Diagnostics"),
+            w!("About"),
         ];
 
         for (i, &name) in tabs.iter().enumerate() {
@@ -495,6 +593,12 @@ fn init_settings_controls(hwnd: HWND, win: &mut SettingsWindow) {
         build_sounds_panel(win.tab_panels[2], win, hinst);
         build_hotkeys_panel(win.tab_panels[3], win, hinst);
         build_about_panel(win.tab_panels[4], win, hinst);
+
+        // Apply modern Segoe UI font to all dialog and panel controls
+        apply_ui_font_recursive(hwnd, get_ui_normal_font());
+        for &panel in win.tab_panels.iter() {
+            apply_ui_font_recursive(panel, get_ui_normal_font());
+        }
     }
 }
 
@@ -513,6 +617,14 @@ unsafe extern "system" fn panel_wndproc(
                 LRESULT(0)
             }
         }
+        WM_CTLCOLORSTATIC => {
+            let hdc = HDC(wparam.0 as *mut _);
+            unsafe {
+                SetBkMode(hdc, TRANSPARENT);
+                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
+            }
+        }
+        WM_CTLCOLORDLG => unsafe { LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize) },
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -1324,166 +1436,241 @@ fn populate_actions_list(h_list: HWND, actions: &[ActionConfig]) {
 }
 
 fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
+    let cfg = win.config.read();
     unsafe {
-        // App title & version
-        let ver_str = "EasyMic v1.3.0 (Native Rust Edition)";
-        let ver_wide: Vec<u16> = ver_str.encode_utf16().chain(std::iter::once(0)).collect();
+        // App Title
+        let h_title = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            w!("EasyMic"),
+            ws_child_vis_i(0),
+            25,
+            20,
+            300,
+            28,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+        let _ = SendMessageW(
+            h_title,
+            WM_SETFONT,
+            WPARAM(get_ui_title_font().0 as usize),
+            LPARAM(1),
+        );
+
+        // Subtitle / Version
+        let h_sub = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            w!("Version 1.3.0 (Native Rust Edition) • High-Performance Audio Manager"),
+            ws_child_vis_i(0),
+            25,
+            50,
+            520,
+            20,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+        let _ = SendMessageW(
+            h_sub,
+            WM_SETFONT,
+            WPARAM(get_ui_bold_font().0 as usize),
+            LPARAM(1),
+        );
+
+        // Description
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("STATIC"),
-            PCWSTR(ver_wide.as_ptr()),
+            w!("Engineered with zero-overhead Win32 input hooks, sub-millisecond hotkey response,\nand direct hardware COM audio endpoint synchronization."),
             ws_child_vis_i(0),
-            20,
-            15,
-            400,
-            22,
+            25,
+            75,
+            520,
+            36,
             panel,
-            HMENU(IDC_LBL_ABOUT_VERSION as isize as *mut _),
+            None,
             hinst,
             None,
         )
         .unwrap();
 
-        // Diagnostics text
-        CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("STATIC"),
-            w!("Live Diagnostics:"),
-            ws_child_vis_i(0),
-            20,
-            45,
-            150,
-            18,
-            panel,
-            None,
-            hinst,
-            None,
-        )
-        .unwrap();
-        let _ = CreateWindowExW(
-            WS_EX_STATICEDGE,
-            w!("STATIC"),
-            w!("Loading diagnostics..."),
-            ws_child_vis_i(0),
-            20,
-            65,
-            535,
-            65,
-            panel,
-            HMENU(IDC_LBL_ABOUT_DIAG as isize as *mut _),
-            hinst,
-            None,
-        )
-        .unwrap();
-
-        // Log box
-        CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("STATIC"),
-            w!("Recent Application Logs:"),
-            ws_child_vis_i(0),
-            20,
-            140,
-            200,
-            18,
-            panel,
-            None,
-            hinst,
-            None,
-        )
-        .unwrap();
-        let _ = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
-            w!("LISTBOX"),
-            PCWSTR::null(),
-            WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | (LBS_HASSTRINGS as u32)),
-            20,
-            160,
-            535,
-            140,
-            panel,
-            HMENU(IDC_LST_LOGS as isize as *mut _),
-            hinst,
-            None,
-        )
-        .unwrap();
-
-        // Buttons
+        // Active Configuration Group Box
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Open GitHub"),
-            ws_child_vis_i(BS_PUSHBUTTON),
+            w!(" Configuration & Status "),
+            ws_child_vis_i(BS_GROUPBOX),
             20,
-            315,
+            125,
+            540,
+            165,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        // Config file location text
+        let cfg_path = AppConfig::get_config_path();
+        let cfg_display = format!("Config File:  {}", cfg_path.to_string_lossy());
+        let cfg_wide: Vec<u16> = cfg_display
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            PCWSTR(cfg_wide.as_ptr()),
+            ws_child_vis_i(0),
+            35,
+            150,
+            510,
+            20,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        // Primary hotkey status
+        let primary_hk = cfg
+            .actions
+            .iter()
+            .find(|a| a.built_in == "Toggle mute")
+            .map(|a| {
+                if a.hotkey != 0 {
+                    get_hotkey_name(a.hotkey)
+                } else {
+                    "Shift + Z (Default)".to_string()
+                }
+            })
+            .unwrap_or_else(|| "Shift + Z (Default)".to_string());
+        let hk_display = format!("Mute Toggle Hotkey:  {}", primary_hk);
+        let hk_wide: Vec<u16> = hk_display
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            PCWSTR(hk_wide.as_ptr()),
+            ws_child_vis_i(0),
+            35,
+            175,
+            510,
+            20,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        // Audio state
+        let is_muted = win.state.is_muted();
+        let mic_status = if is_muted { "Muted" } else { "Unmuted (Live)" };
+        let status_display = format!("Current Mic Status:  {}", mic_status);
+        let status_wide: Vec<u16> = status_display
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            PCWSTR(status_wide.as_ptr()),
+            ws_child_vis_i(0),
+            35,
+            200,
+            510,
+            20,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        // Mode info
+        let mode_display =
+            "Input Subsystem:  Dedicated O(1) Hook Thread • Memory-mapped Portable Mode"
+                .to_string();
+        let mode_wide: Vec<u16> = mode_display
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            PCWSTR(mode_wide.as_ptr()),
+            ws_child_vis_i(0),
+            35,
+            225,
+            510,
+            20,
+            panel,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        // Action Buttons: Open conf.ini, Open Folder, GitHub Repo
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Open conf.ini"),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            35,
+            252,
             120,
-            28,
+            26,
+            panel,
+            HMENU(IDC_BTN_OPEN_CONFIG as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("Open App Folder"),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            165,
+            252,
+            130,
+            26,
+            panel,
+            HMENU(IDC_BTN_OPEN_FOLDER as isize as *mut _),
+            hinst,
+            None,
+        )
+        .unwrap();
+
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("BUTTON"),
+            w!("GitHub Repository"),
+            ws_child_vis_i(BS_PUSHBUTTON),
+            305,
+            252,
+            140,
+            26,
             panel,
             HMENU(IDC_BTN_GITHUB as isize as *mut _),
             hinst,
             None,
         )
         .unwrap();
-        CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("BUTTON"),
-            w!("Refresh Logs"),
-            ws_child_vis_i(BS_PUSHBUTTON),
-            150,
-            315,
-            120,
-            28,
-            panel,
-            HMENU(IDC_BTN_REFRESH_LOGS as isize as *mut _),
-            hinst,
-            None,
-        )
-        .unwrap();
-
-        refresh_diagnostics_tab(panel, win);
-    }
-}
-
-fn refresh_diagnostics_tab(panel: HWND, win: &SettingsWindow) {
-    let diag = win.diagnostics.get_summary();
-    let diag_str = format!(
-        "Toggles: {} | Avg Verified Mute Latency: {:.2} ms | Avg Total Input Latency: {:.2} ms\nPeak Mic Level: {:.1}% | Hook Mode: Non-blocking O(1) Dedicated Thread\nArchitecture: Zero-overhead input bypass, Generation-tracked Live COM synchronization",
-        diag.total_count, diag.avg_endpoint_latency_ms, diag.avg_total_latency_ms, win.audio.get_peak() * 100.0
-    );
-    let diag_wide: Vec<u16> = diag_str.encode_utf16().chain(std::iter::once(0)).collect();
-
-    unsafe {
-        let h_diag = get_ctrl(panel, IDC_LBL_ABOUT_DIAG);
-        if !h_diag.is_invalid() && h_diag.0 as isize != 0 {
-            let _ = SetWindowTextW(h_diag, PCWSTR(diag_wide.as_ptr()));
-        }
-
-        let h_logs = get_ctrl(panel, IDC_LST_LOGS);
-        if !h_logs.is_invalid() && h_logs.0 as isize != 0 {
-            let _ = SendMessageW(h_logs, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
-            if let Some(logger) = get_logger() {
-                let entries = logger.get_entries();
-                for e in entries.iter().rev().take(30).rev() {
-                    let line = format!("[{}] [{}] {}", e.timestamp, e.level, e.message);
-                    let wide: Vec<u16> = line.encode_utf16().chain(std::iter::once(0)).collect();
-                    let _ = SendMessageW(
-                        h_logs,
-                        LB_ADDSTRING,
-                        WPARAM(0),
-                        LPARAM(wide.as_ptr() as isize),
-                    );
-                }
-                let count = SendMessageW(h_logs, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
-                if count > 0 {
-                    let _ = SendMessageW(
-                        h_logs,
-                        LB_SETCURSEL,
-                        WPARAM((count - 1) as usize),
-                        LPARAM(0),
-                    );
-                }
-            }
-        }
     }
 }
 
@@ -1610,12 +1797,39 @@ fn handle_settings_command(
                 }
             }
         }
+        IDC_BTN_OPEN_CONFIG => {
+            let path = AppConfig::get_config_path();
+            let path_str = path.to_string_lossy().to_string();
+            let path_wide: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let _ = ShellExecuteW(
+                    None,
+                    w!("open"),
+                    PCWSTR(path_wide.as_ptr()),
+                    None,
+                    None,
+                    SW_SHOWNORMAL,
+                );
+            }
+        }
+        IDC_BTN_OPEN_FOLDER => {
+            let dir = AppConfig::get_exe_dir();
+            let dir_str = dir.to_string_lossy().to_string();
+            let dir_wide: Vec<u16> = dir_str.encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let _ = ShellExecuteW(
+                    None,
+                    w!("open"),
+                    PCWSTR(dir_wide.as_ptr()),
+                    None,
+                    None,
+                    SW_SHOWNORMAL,
+                );
+            }
+        }
         IDC_BTN_GITHUB => unsafe {
             let _ = ShellExecuteW(None, w!("open"), REPO_URL_W, None, None, SW_SHOWNORMAL);
         },
-        IDC_BTN_REFRESH_LOGS => {
-            refresh_diagnostics_tab(win.tab_panels[4], win);
-        }
         _ => {}
     }
 }
@@ -1802,6 +2016,14 @@ unsafe extern "system" fn action_editor_wndproc(
             }
             LRESULT(0)
         }
+        WM_CTLCOLORSTATIC => {
+            let hdc = HDC(wparam.0 as *mut _);
+            unsafe {
+                SetBkMode(hdc, TRANSPARENT);
+                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
+            }
+        }
+        WM_CTLCOLORDLG => unsafe { LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize) },
         WM_COMMAND => {
             let id = wparam.0 & 0xFFFF;
             let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ActionEditorState;
@@ -2256,6 +2478,9 @@ fn init_action_editor_controls(hwnd: HWND, state: &mut ActionEditorState) {
             None,
         )
         .unwrap();
+
+        // Apply modern Segoe UI font to action editor controls
+        apply_ui_font_recursive(hwnd, get_ui_normal_font());
     }
 }
 

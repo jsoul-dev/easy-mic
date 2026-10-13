@@ -1,106 +1,26 @@
-//! Crash handler, panic hook, and in-memory log buffer for EasyMic.
+//! Crash handler and panic hook for EasyMic.
 
 use chrono::Local;
-use parking_lot::RwLock;
-use std::collections::VecDeque;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::Arc;
 use windows::core::w;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
-const MAX_LOG_ENTRIES: usize = 500;
-
-#[derive(Clone, Debug)]
-pub struct LogEntry {
-    pub timestamp: String,
-    pub level: log::Level,
-    pub target: String,
-    pub message: String,
-}
-
-pub struct AppLogger {
-    entries: RwLock<VecDeque<LogEntry>>,
-    log_file_path: Option<PathBuf>,
-}
-
-static LOGGER: RwLock<Option<Arc<AppLogger>>> = RwLock::new(None);
-
-impl AppLogger {
-    pub fn new() -> Arc<Self> {
-        let log_file_path = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("easymic.log")));
-
-        Arc::new(Self {
-            entries: RwLock::new(VecDeque::with_capacity(MAX_LOG_ENTRIES)),
-            log_file_path,
-        })
-    }
-
-    pub fn get_entries(&self) -> Vec<LogEntry> {
-        self.entries.read().iter().cloned().collect()
-    }
-}
+pub struct AppLogger;
 
 impl log::Log for AppLogger {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
+        false
     }
 
-    fn log(&self, record: &log::Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
-        let entry = LogEntry {
-            timestamp: timestamp.clone(),
-            level: record.level(),
-            target: record.target().to_string(),
-            message: format!("{}", record.args()),
-        };
-
-        {
-            let mut entries = self.entries.write();
-            if entries.len() >= MAX_LOG_ENTRIES {
-                entries.pop_front();
-            }
-            entries.push_back(entry);
-        }
-
-        // Also write to log file if available
-        if let Some(ref path) = self.log_file_path {
-            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
-                let _ = writeln!(
-                    f,
-                    "[{}] [{}] [{}] {}",
-                    timestamp,
-                    record.level(),
-                    record.target(),
-                    record.args()
-                );
-            }
-        }
-    }
+    fn log(&self, _record: &log::Record) {}
 
     fn flush(&self) {}
 }
 
-pub fn get_logger() -> Option<Arc<AppLogger>> {
-    LOGGER.read().clone()
-}
+static LOGGER: AppLogger = AppLogger;
 
 pub fn init_logging_and_crash_handler() {
-    let app_logger = AppLogger::new();
-    *LOGGER.write() = Some(app_logger.clone());
-
-    // Register with log crate
-    let leaked_logger: &'static AppLoggerWrapper =
-        Box::leak(Box::new(AppLoggerWrapper(app_logger)));
-    let _ = log::set_logger(leaked_logger);
-    log::set_max_level(log::LevelFilter::Info);
+    let _ = log::set_logger(&LOGGER);
+    log::set_max_level(log::LevelFilter::Off);
 
     // Register panic hook
     std::panic::set_hook(Box::new(|panic_info| {
@@ -158,20 +78,4 @@ pub fn init_logging_and_crash_handler() {
             );
         }
     }));
-}
-
-struct AppLoggerWrapper(Arc<AppLogger>);
-
-impl log::Log for AppLoggerWrapper {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        self.0.enabled(metadata)
-    }
-
-    fn log(&self, record: &log::Record) {
-        self.0.log(record);
-    }
-
-    fn flush(&self) {
-        self.0.flush();
-    }
 }
