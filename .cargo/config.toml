@@ -1,0 +1,4 @@
+# Statically link the C runtime (CRT) so the binary does not require
+# Microsoft Visual C++ Redistributables (VCRUNTIME140.dll / MSVCP140.dll).
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
