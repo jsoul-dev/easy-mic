@@ -18,7 +18,7 @@ use windows::Win32::UI::Controls::{
 fn main() {
     // 1. Initialize crash logging and panic hook
     init_logging_and_crash_handler();
-    log::info!("Easy-Mic Rust starting up");
+    log::info!("Easy-Mic starting up");
 
     // 2. Enforce single instance via named Win32 Mutex
     let _instance_guard = match SingleInstanceGuard::acquire() {
@@ -56,6 +56,17 @@ fn main() {
                 "Fatal error during Easy-Mic lifecycle initialization: {:?}",
                 err
             );
+            let msg = format!("Fatal error during Easy-Mic lifecycle initialization: {:?}\0", err);
+            let wide: Vec<u16> = msg.encode_utf16().collect();
+            unsafe {
+                windows::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                    None,
+                    windows::core::PCWSTR(wide.as_ptr()),
+                    windows::core::w!("Easy-Mic Error"),
+                    windows::Win32::UI::WindowsAndMessaging::MB_OK
+                        | windows::Win32::UI::WindowsAndMessaging::MB_ICONERROR,
+                );
+            }
         }
     }
 
