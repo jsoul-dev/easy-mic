@@ -1927,10 +1927,16 @@ fn build_about_panel(panel: HWND, win: &SettingsWindow, hinst: HINSTANCE) {
         );
 
         // Subtitle / Version
+        let ver_str: Vec<u16> = format!(
+            "Version {} (Native Rust Edition) • Fork of k1tbyte/easymic\0",
+            env!("CARGO_PKG_VERSION")
+        )
+        .encode_utf16()
+        .collect();
         let h_sub = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("STATIC"),
-            w!("Version 1.3.0 (Native Rust Edition) • Fork of k1tbyte/easymic"),
+            PCWSTR(ver_str.as_ptr()),
             ws_child_vis_i(0),
             25,
             50,
