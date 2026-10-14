@@ -24,6 +24,9 @@ static LOGGER: AppLogger = AppLogger;
 pub fn get_crash_log_path() -> PathBuf {
     let config_path = crate::core::config::AppConfig::get_config_path();
     if let Some(parent) = config_path.parent() {
+        if !parent.exists() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let candidate = parent.join("easy-mic-crash.log");
         if crate::core::config::AppConfig::is_path_writable(&candidate) {
             return candidate;
@@ -80,8 +83,13 @@ pub fn init_logging_and_crash_handler() {
         log::error!("CRASH:\n{}", report);
 
         // Save to easy-mic-crash.log beside config.ini (or fallback)
-        let crash_file = get_crash_log_path();
-        let _ = std::fs::write(&crash_file, &report);
+        let mut crash_file = get_crash_log_path();
+        if std::fs::write(&crash_file, &report).is_err() {
+            let fallback = std::env::temp_dir().join("easy-mic-crash.log");
+            if std::fs::write(&fallback, &report).is_ok() {
+                crash_file = fallback;
+            }
+        }
 
         // Show native message box
         let message_wide: Vec<u16> = format!(
@@ -113,5 +121,16 @@ mod tests {
         let path = get_crash_log_path();
         assert!(path.ends_with("easy-mic-crash.log"));
         assert!(crate::core::config::AppConfig::is_path_writable(&path));
+    }
+
+    #[test]
+    fn test_crash_log_write_and_read() {
+        let path = get_crash_log_path();
+        let test_content = "easy-mic crash test content";
+        let res = std::fs::write(&path, test_content);
+        assert!(res.is_ok(), "Failed to write to crash log path: {:?}", path);
+        let read = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(read, test_content);
+        let _ = std::fs::remove_file(&path);
     }
 }
