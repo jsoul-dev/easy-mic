@@ -1,6 +1,7 @@
 //! Crash handler and panic hook for EasyMic.
 
 use chrono::Local;
+use std::path::PathBuf;
 use windows::core::w;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
@@ -17,6 +18,31 @@ impl log::Log for AppLogger {
 }
 
 static LOGGER: AppLogger = AppLogger;
+
+/// Determines the best location for easy-mic-crash.log, preferring the directory
+/// beside config.ini and checking whether it is writable.
+pub fn get_crash_log_path() -> PathBuf {
+    let config_path = crate::core::config::AppConfig::get_config_path();
+    if let Some(parent) = config_path.parent() {
+        let candidate = parent.join("easy-mic-crash.log");
+        if crate::core::config::AppConfig::is_path_writable(&candidate) {
+            return candidate;
+        }
+    }
+
+    // Fallback 1: beside executable if writable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join("easy-mic-crash.log");
+            if crate::core::config::AppConfig::is_path_writable(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
+    // Fallback 2: %TEMP%\easy-mic-crash.log
+    std::env::temp_dir().join("easy-mic-crash.log")
+}
 
 pub fn init_logging_and_crash_handler() {
     let _ = log::set_logger(&LOGGER);
@@ -44,26 +70,24 @@ pub fn init_logging_and_crash_handler() {
             .unwrap_or("unnamed")
             .to_string();
         let backtrace = std::backtrace::Backtrace::capture();
+        let panic_str = panic_info.to_string();
 
         let report = format!(
-            "Easy-Mic Crash Report\nTime: {}\nThread: {}\nLocation: {}\nError: {}\n\nBacktrace:\n{:?}",
-            now, thread_name, location, payload, backtrace
+            "Easy-Mic Crash Report\nTime: {}\nThread: {}\nLocation: {}\nError: {}\nDetails: {}\n\nBacktrace:\n{:?}",
+            now, thread_name, location, payload, panic_str, backtrace
         );
 
         log::error!("CRASH:\n{}", report);
 
-        // Save to easy-mic_crash.log
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                let crash_file = dir.join("easy-mic_crash.log");
-                let _ = std::fs::write(&crash_file, &report);
-            }
-        }
+        // Save to easy-mic-crash.log beside config.ini (or fallback)
+        let crash_file = get_crash_log_path();
+        let _ = std::fs::write(&crash_file, &report);
 
         // Show native message box
         let message_wide: Vec<u16> = format!(
-            "Easy-Mic encountered an unexpected error and must terminate:\n\n{}\n\nDetails saved to easy-mic_crash.log",
-            payload
+            "Easy-Mic encountered an unexpected error and must terminate:\n\n{}\n\nDetails saved to:\n{}",
+            payload,
+            crash_file.display()
         )
         .encode_utf16()
         .chain(std::iter::once(0))
@@ -78,4 +102,16 @@ pub fn init_logging_and_crash_handler() {
             );
         }
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_crash_log_path_resolves_and_writable() {
+        let path = get_crash_log_path();
+        assert!(path.ends_with("easy-mic-crash.log"));
+        assert!(crate::core::config::AppConfig::is_path_writable(&path));
+    }
 }
