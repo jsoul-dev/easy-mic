@@ -12,6 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub const WM_TRAY_CALLBACK: u32 = WM_USER + 301;
 pub const ID_TRAY_SETTINGS: usize = 2001;
 pub const ID_TRAY_EXIT: usize = 2002;
+pub const ID_TRAY_TOGGLE_MUTE: usize = 2003;
 
 pub struct TrayIcon {
     hwnd: HWND,

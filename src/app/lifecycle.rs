@@ -13,7 +13,9 @@ use crate::input::hook::HookManager;
 use crate::ui::icons::AppIcons;
 use crate::ui::indicator::IndicatorWindow;
 use crate::ui::settings::SettingsWindow;
-use crate::ui::tray::{TrayIcon, ID_TRAY_EXIT, ID_TRAY_SETTINGS, WM_TRAY_CALLBACK};
+use crate::ui::tray::{
+    TrayIcon, ID_TRAY_EXIT, ID_TRAY_SETTINGS, ID_TRAY_TOGGLE_MUTE, WM_TRAY_CALLBACK,
+};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use windows::core::w;
@@ -241,7 +243,7 @@ unsafe extern "system" fn coordinator_wndproc(
                 }
             } else if event == WM_LBUTTONDBLCLK {
                 unsafe {
-                    let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(ID_TRAY_SETTINGS), LPARAM(0));
+                    let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(ID_TRAY_TOGGLE_MUTE), LPARAM(0));
                 }
             }
             LRESULT(0)
@@ -264,6 +266,20 @@ unsafe extern "system" fn coordinator_wndproc(
 
 fn handle_tray_command(_hwnd: HWND, cmd: usize, life: &AppLifecycle) {
     match cmd {
+        ID_TRAY_TOGGLE_MUTE => match life.audio_manager.toggle_mute() {
+            Ok(new_muted) => {
+                let cfg = life.config.read();
+                let cue = if new_muted {
+                    &cfg.mute_sound_source
+                } else {
+                    &cfg.unmute_sound_source
+                };
+                life.sound_manager.play(cue, cfg.bell_volume as u8);
+            }
+            Err(e) => {
+                log::error!("Microphone toggle failed on tray double click: {}", e);
+            }
+        },
         ID_TRAY_SETTINGS => {
             SettingsWindow::open(
                 life.hinstance,
